@@ -1,0 +1,19 @@
+GET http://127.0.0.1:8000/mail/test?email=1114857160@qq.com
+
+
+
+###
+GET http://127.0.0.1:8000/auth/code?email=1114857160@qq.com
+
+
+### 2. 注册用户（把验证码换成你邮箱里收到的真实数字）
+POST http://127.0.0.1:8000/auth/register
+Content-Type: application/json
+                             
+{
+  "email": "1114857160@qq.com",
+  "username": "testuser",
+  "password": "123456",
+  "confirm_password": "123456",
+  "code": "5306"
+}
