@@ -1,19 +1,85 @@
-GET http://127.0.0.1:8000/mail/test?email=1114857160@qq.com
+@baseUrl = http://127.0.0.1:8000
+@email = 1114857160@qq.com
+@password = 123456
 
 
+### 1. 测试邮件发送
+GET {{baseUrl}}/mail/test?email={{email}}
 
-###
-GET http://127.0.0.1:8000/auth/code?email=1114857160@qq.com
+
+### 2. 获取注册验证码
+GET {{baseUrl}}/auth/code?email={{email}}
 
 
-### 2. 注册用户（把验证码换成你邮箱里收到的真实数字）
-POST http://127.0.0.1:8000/auth/register
+### 3. 注册用户
+# 请把 code 修改成邮箱里收到的真实验证码
+POST {{baseUrl}}/auth/register
 Content-Type: application/json
-                             
+
 {
-  "email": "1114857160@qq.com",
+  "email": "{{email}}",
   "username": "testuser",
-  "password": "123456",
-  "confirm_password": "123456",
+  "password": "{{password}}",
+  "confirm_password": "{{password}}",
   "code": "5306"
+}
+
+
+### 4. 登录并获取 access_token 和 refresh_token
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+
+### 5. 使用 access token 访问需要登录的接口
+GET {{baseUrl}}/auth/verify-access
+Authorization: Bearer {{login.response.body.$.access_token}}
+
+
+### 6. 使用 refresh token 获取新的 access token
+# @name refreshToken
+POST {{baseUrl}}/auth/refresh
+Authorization: Bearer {{login.response.body.$.refresh_token}}
+
+
+### 7. 使用新 access token 再次访问受保护接口
+GET {{baseUrl}}/auth/verify-access
+Authorization: Bearer {{refreshToken.response.body.$.access_token}}
+
+
+### 8. 错误测试：拿 refresh token 访问 access 接口
+GET {{baseUrl}}/auth/verify-access
+Authorization: Bearer {{login.response.body.$.refresh_token}}
+
+
+### 9. 错误测试：拿 access token 请求刷新
+POST {{baseUrl}}/auth/refresh
+Authorization: Bearer {{login.response.body.$.access_token}}
+
+
+### 10. 错误测试：使用伪造 Token
+GET {{baseUrl}}/auth/verify-access
+Authorization: Bearer abc.def.ghi
+
+
+### 11. 错误测试：完全不传 Token
+GET {{baseUrl}}/auth/verify-access
+
+
+###  登录进行
+
+POST http://127.0.0.1:8000/name/get_names
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzg0MTg5MTA2fQ.ZlVzKybeJBTRF2sNGDVUYEPquv_TxdWk7Zs6_P5j7Og
+
+{
+  "surname": "陈",
+  "length": "两字",
+  "gender": "男",
+  "other": "要尽量大气一点"
 }

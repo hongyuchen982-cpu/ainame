@@ -39,3 +39,14 @@ class LoginOut(BaseModel):
     user: UserSchema
     access_token: str
     refresh_token: str
+
+
+from pydantic import BaseModel, ConfigDict
+
+class AccessTokenOut(BaseModel):
+    access_token: str
+
+
+class TokenVerifyOut(BaseModel):
+    message: str
+    user_id: int

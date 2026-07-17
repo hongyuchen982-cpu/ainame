@@ -19,3 +19,7 @@ async def mail_test(email:str,mail:FastMail=Depends(get_email)):
 from routers.auth_router import router as auth_router
 
 app.include_router(auth_router)
+
+from routers.name_router import router as name_router
+
+app.include_router(name_router)

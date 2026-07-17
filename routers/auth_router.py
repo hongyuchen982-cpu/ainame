@@ -47,6 +47,7 @@ redis: Redis = Depends(get_redis)):
         else:
             # 捕获所有其他错误
             raise HTTPException(status_code=500, detail="邮件发送失败！")
+        
 from schemas.user_schemas import UserCreateSchema,RegisterIn
 from repository.user_repo import UserRepository
 from dependencies import get_session
@@ -112,3 +113,31 @@ async def login(
         "access_token": tokens["access_token"],
         "refresh_token": tokens["refresh_token"],
 	}
+
+
+from schemas.user_schemas import AccessTokenOut, TokenVerifyOut
+
+@router.get(
+    path="/verify-access",
+    response_model=TokenVerifyOut,
+)
+async def verify_access_token(
+    user_id: int = Depends(
+        auth_handler.auth_access_dependency
+    ),
+):
+    return {
+        "message": "Access Token验证成功",
+        "user_id": user_id,
+    }
+
+@router.post(
+    path="/refresh",
+    response_model=AccessTokenOut,
+)
+async def refresh_access_token(
+    user_id: int = Depends(
+        auth_handler.auth_refresh_dependency
+    ),
+):
+    return auth_handler.encode_update_token(user_id)
