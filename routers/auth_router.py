@@ -48,10 +48,19 @@ redis: Redis = Depends(get_redis)):
             # 捕获所有其他错误
             raise HTTPException(status_code=500, detail="邮件发送失败！")
         
-from schemas.user_schemas import UserCreateSchema,RegisterIn
-from repository.user_repo import UserRepository
-from dependencies import get_session
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio.session import AsyncSession
+from redis.asyncio import Redis
+
+from schemas.user_schemas import UserCreateSchema, RegisterIn
+from repository.user_repo import UserRepository
+from repository.credit_repo import CreditRepository
+from dependencies import get_session
+from core.redistools import get_redis
+
+# 假设 router 和 ResponseOut 已经在文件顶部定义或导入
+# @router = APIRouter(...)
+# from schemas.common_schemas import ResponseOut
 
 @router.post("/register", response_model=ResponseOut)
 async def register(
@@ -60,30 +69,42 @@ async def register(
     redis: Redis = Depends(get_redis),
 ):
     user_repo = UserRepository(session=session)
+    credit_repo = CreditRepository(session=session)
+    
     # 1. 判断邮箱是否存在
     email_exist = await user_repo.email_is_exist(email=str(data.email))
     if email_exist:
         raise HTTPException(400, detail="该邮箱已经存在！")
-    # 2. 校验收证码是否正确  
+        
+    # 2. 校验验证码是否正确
     redis_key = f"register:code:{data.email}"
     saved_code = await redis.get(redis_key)
     if not saved_code:
-        # 如果 Redis 里没有，说明要么压根没发，要么过了 5 分钟已经自动过期删除了
         raise HTTPException(400, detail="验证码已过期或未发送！")
-
+    
+    # 注意：如果使用的 redis 客户端默认返回 bytes，这里可能需要 decode("utf-8")
     if saved_code != str(data.code):
         raise HTTPException(400, detail="验证码错误！")
-    # if not email_code_match:
-    #     raise HTTPException(400, detail='邮箱或验证码错误！')
+        
     try:
-        await user_repo.create(UserCreateSchema(email=str(data.email),
-            password=data.password, username=data.username))
-
-        # 4. 安全防御：注册成功后，立刻删掉 Redis 里的验证码！
-        # 防止有人拿着这个还没过期的验证码，去疯狂发恶意请求（防重放攻击）
+        # 3. 创建用户
+        user = await user_repo.create(
+            UserCreateSchema(
+                email=str(data.email),
+                password=data.password,
+                username=data.username,
+            )
+        )
+        
+        # 4. 注册成功后，赠送 3 次起名机会
+        await credit_repo.create_register_credit(user_id=user.id, gift_count=3)
+        
+        # 5. 注册成功后删除验证码，防止重复使用
         await redis.delete(redis_key)
+        
     except Exception as e:
         raise HTTPException(500, detail=str(e))
+        
     return ResponseOut()
 
 from core.authtools import AuthHandler

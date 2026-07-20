@@ -20,4 +20,8 @@ class UserRepository:
         async with self.session.begin():
             user = User(**user_schema.model_dump())
             self.session.add(user)
+            
+            await self.session.flush()
+
             return user
+          

@@ -2,7 +2,9 @@ from fastapi import FastAPI,Depends
 from fastapi_mail import FastMail, MessageSchema, MessageType
 from dependencies import get_email
 
+
 app = FastAPI()
+
 
 @app.get("/mail/test")
 async def mail_test(email:str,mail:FastMail=Depends(get_email)):
@@ -23,3 +25,6 @@ app.include_router(auth_router)
 from routers.name_router import router as name_router
 
 app.include_router(name_router)
+
+from routers.credit_router import router as credit_router
+app.include_router(credit_router)

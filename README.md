@@ -1,134 +1,95 @@
 # AI Name - 智能起名后端
 
-AI Name 是一个基于 FastAPI 与 DeepSeek 的智能起名后端项目。项目目前实现了邮箱验证码注册、用户登录、JWT 双令牌认证、Redis 验证码缓存，以及根据姓氏、性别、名字长度和用户偏好生成结构化起名方案。
+AI Name 是一个基于 FastAPI、SQLAlchemy 异步 ORM、Redis 和 DeepSeek 的智能起名后端项目。它提供了用户注册、登录、JWT 鉴权、邮箱验证码、AI 起名生成以及基础积分系统。
 
-每个候选名字包含名字、出处和寓意，接口通过 Pydantic 对输入与模型输出进行结构化校验。
+## 项目定位
+
+这个项目的目标是把“姓名起名”流程做成一个可扩展的后端服务，支持：
+
+- 用户注册与登录
+- 邮箱验证码校验
+- Access Token / Refresh Token 鉴权
+- 基于 DeepSeek 的智能起名
+- 注册赠送起名次数，并在起名成功后扣减次数
+- 通过 Swagger / ReDoc 直接测试接口
 
 ## 已实现功能
 
-- 邮箱验证码发送，验证码写入 Redis 并在 5 分钟后过期
-- 邮箱验证码注册与重复邮箱检查
-- 使用 `pwdlib` 哈希保存用户密码
-- 用户邮箱、密码登录
-- JWT Access Token 与 Refresh Token
-- Access Token 验证与 Refresh Token 换新
-- Bearer Token 接口保护
-- DeepSeek 智能起名
-- 起名结果结构化输出：姓名、出处、寓意
-- SQLAlchemy 2.0 异步 ORM
-- Alembic 数据库迁移
-- Windows 一键启动脚本
-- FastAPI 自动生成 Swagger / ReDoc 接口文档
+- 邮箱验证码发送，验证码保存到 Redis，默认 5 分钟有效
+- 注册时校验邮箱是否已存在、验证码是否正确
+- 使用 `pwdlib` 对密码进行哈希存储
+- 用户登录并签发 Access Token、Refresh Token
+- 使用 Bearer Token 访问受保护接口
+- 支持 Access Token 验证与 Refresh Token 刷新
+- DeepSeek 生成结构化起名结果（姓名、出处、寓意）
+- 注册成功后赠送 3 次起名机会
+- 起名成功后扣减 1 次次数，并记录积分流水
+- 使用 SQLAlchemy 2.x 异步 ORM + Alembic 数据库迁移
+- 提供 Windows 启动脚本与 VS Code HTTP 测试文件
 
 ## 技术栈
 
-| 分类 | 技术 |
-| --- | --- |
-| Web 框架 | FastAPI、Uvicorn |
-| 数据校验 | Pydantic |
-| 数据库 | MySQL、SQLAlchemy Async、aiomysql |
-| 数据库迁移 | Alembic |
-| 缓存 | Redis、redis-py AsyncIO |
-| 身份认证 | PyJWT、HTTP Bearer、HS256 |
-| 密码安全 | pwdlib |
-| 邮件 | fastapi-mail、aiosmtplib |
-| AI | DeepSeek、LangChain |
-| 配置 | python-dotenv、`.env` |
+- Web 框架：FastAPI、Uvicorn
+- 数据校验：Pydantic
+- 数据库：MySQL、SQLAlchemy Async、aiomysql
+- 数据库迁移：Alembic
+- 缓存：Redis、redis-py AsyncIO
+- 身份认证：PyJWT、HTTP Bearer
+- 密码安全：pwdlib
+- 邮件发送：fastapi-mail、aiosmtplib
+- AI 能力：DeepSeek、LangChain、langchain-deepseek
+- 配置管理：python-dotenv
 
 ## 项目结构
 
 ```text
 ai_name/
-├── alembicdb/             # Alembic 迁移环境与版本文件
+├── alembicdb/                  # Alembic 迁移脚本与环境
 ├── core/
-│   ├── authtools.py       # JWT 创建、解析与认证依赖
-│   ├── mailtool.py        # 邮件客户端配置
-│   ├── nametools.py       # DeepSeek 起名链与重试逻辑
-│   └── redistools.py      # Redis 异步客户端
+│   ├── authtools.py           # JWT 生成、解析与鉴权依赖
+│   ├── mailtool.py            # 邮件客户端配置
+│   ├── nametools.py           # DeepSeek 起名链与重试逻辑
+│   └── redistools.py          # Redis 连接与依赖注入
 ├── models/
-│   ├── __init__.py        # 数据库引擎、会话和 ORM Base
-│   └── user.py            # User 模型与密码哈希逻辑
+│   ├── __init__.py            # 数据库引擎、SessionFactory 与 Base
+│   ├── user.py                # 用户模型
+│   └── user_credit.py         # 用户积分与流水模型
 ├── repository/
-│   └── user_repo.py       # 用户数据访问层
+│   ├── credit_repo.py         # 积分相关仓储逻辑
+│   └── user_repo.py           # 用户相关仓储逻辑
 ├── routers/
-│   ├── auth_router.py     # 验证码、注册、登录与 Token 接口
-│   └── name_router.py     # 受保护的智能起名接口
+│   ├── auth_router.py         # 注册、登录、验证码、Token 接口
+│   ├── credit_router.py       # 查询剩余起名次数接口
+│   └── name_router.py         # 起名接口
 ├── schemas/
-│   ├── name_schemas.py    # 起名请求和响应模型
-│   └── user_schemas.py    # 注册、登录和 Token 数据模型
+│   ├── credit_schemas.py      # 积分相关响应模型
+│   ├── name_schemas.py        # 起名请求/响应模型
+│   └── user_schemas.py        # 用户/认证相关模型
 ├── settings/
-│   └── __init__.py        # Access / Refresh Token 有效期
-├── dependencies.py        # 数据库会话与邮件依赖
-├── main.py                # FastAPI 应用入口
-├── start.bat              # Windows 一键启动 Redis 与 Uvicorn
-├── test.http              # VS Code REST Client 测试请求
-├── alembic.ini            # Alembic 配置
-└── .env                   # 本地密钥配置，不应提交到 Git
+│   └── __init__.py            # Token 过期时间配置
+├── dependencies.py            # 数据库会话与邮箱依赖
+├── main.py                    # FastAPI 应用入口
+├── start.bat                  # Windows 一键启动脚本
+├── test.http                  # VS Code REST Client 请求示例
+├── alembic.ini                # Alembic 配置文件
+└── .env                       # 本地环境变量，不要提交到 Git
 ```
-
-## 工作流程
-
-### 注册流程
-
-1. 客户端调用验证码接口。
-2. 服务端生成 4 位验证码并发送邮件。
-3. 验证码以邮箱为键写入 Redis，有效期 300 秒。
-4. 客户端提交邮箱、用户名、密码和验证码。
-5. 服务端校验邮箱、验证码与密码字段。
-6. 密码经过哈希后写入 MySQL。
-7. 注册成功后删除 Redis 中的验证码，防止重复使用。
-
-### 登录与认证流程
-
-1. 用户提交邮箱和密码。
-2. 服务端查询用户并验证密码哈希。
-3. 登录成功后签发 Access Token 和 Refresh Token。
-4. 客户端使用 Access Token 访问受保护接口。
-5. Access Token 过期后，使用 Refresh Token 获取新的 Access Token。
-
-默认有效期：
-
-- Access Token：15 分钟
-- Refresh Token：30 天
-
-### 智能起名流程
-
-1. 客户端携带 Access Token 和起名条件调用接口。
-2. FastAPI 验证 Token 并取得当前用户 ID。
-3. LangChain 将结构化条件发送给 DeepSeek。
-4. Pydantic 校验模型输出。
-5. 返回 5 个包含名字、出处和寓意的候选方案。
 
 ## 环境要求
 
-- Python 3.11 或更高版本
+- Python 3.11+
 - MySQL 8.x
-- Redis 5.x 或更高版本
+- Redis 5.x+
 - 可用的 SMTP 邮箱账号
 - DeepSeek API Key
 
-项目中的 `start.bat` 面向 Windows，并默认 Redis 安装在：
-
-```text
-C:\Program Files\Redis
-```
-
-如果 Redis 位于其他目录，请修改 `start.bat` 中的 `REDIS_DIR`。
-
-## 本地安装
+## 快速开始
 
 ### 1. 克隆项目
 
 ```bash
-git clone git@github.com:hongyuchen982-cpu/ainame.git
-cd ainame
-```
-
-也可以使用 HTTPS：
-
-```bash
-git clone https://github.com/hongyuchen982-cpu/ainame.git
-cd ainame
+git clone <你的仓库地址>
+cd ai_name
 ```
 
 ### 2. 创建虚拟环境
@@ -143,12 +104,6 @@ Windows PowerShell 激活：
 .\.venv\Scripts\Activate.ps1
 ```
 
-Windows CMD 激活：
-
-```bat
-.venv\Scripts\activate.bat
-```
-
 ### 3. 安装依赖
 
 ```bash
@@ -158,7 +113,7 @@ pip install fastapi uvicorn sqlalchemy aiomysql alembic redis fastapi-mail aiosm
 ### 4. 创建 MySQL 数据库
 
 ```sql
-CREATE DATABASE ainame
+CREATE DATABASE ai_name
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
 ```
@@ -168,10 +123,8 @@ CREATE DATABASE ainame
 在项目根目录创建 `.env`：
 
 ```env
-# MySQL
-DB_URI=mysql+aiomysql://root:your_mysql_password@127.0.0.1:3306/ainame?charset=utf8mb4
+DB_URI=mysql+aiomysql://root:your_password@127.0.0.1:3306/ai_name?charset=utf8mb4
 
-# SMTP 邮箱
 MAIL_USERNAME=your_email@example.com
 MAIL_PASSWORD=your_smtp_authorization_code
 MAIL_FROM=your_email@example.com
@@ -181,20 +134,15 @@ MAIL_FROM_NAME=AI Name
 MAIL_STARTTLS=True
 MAIL_SSL_TLS=False
 
-# JWT 签名密钥
 JWT_SECRET_KEY=replace_with_a_long_random_secret
-
-# DeepSeek
 DEEPSEEK_API_KEY=replace_with_your_deepseek_api_key
 ```
 
-可以使用 Python 生成 JWT 随机密钥：
+你可以用下面的命令生成一个 JWT 密钥：
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
-
-> `.env` 包含数据库密码、邮箱授权码和 API Key，禁止提交到 GitHub。
 
 ### 6. 执行数据库迁移
 
@@ -204,50 +152,58 @@ alembic upgrade head
 
 ### 7. 启动 Redis
 
-确认 Redis 正常响应：
+确认 Redis 正常运行：
 
 ```bash
 redis-cli ping
 ```
 
-正确结果：
+预期返回：
 
 ```text
 PONG
 ```
 
-### 8. 启动 FastAPI
+### 8. 启动服务
 
 ```bash
 uvicorn main:app --reload
 ```
 
-Windows 用户也可以双击：
+Windows 用户也可以直接运行：
 
-```text
+```bat
 start.bat
 ```
 
-启动后访问：
+启动后可访问：
 
-- Swagger UI：<http://127.0.0.1:8000/docs>
-- ReDoc：<http://127.0.0.1:8000/redoc>
+- Swagger UI: http://127.0.0.1:8000/docs
+- ReDoc: http://127.0.0.1:8000/redoc
 
-## API 接口
+## 接口说明
 
-| 方法 | 路径 | 是否认证 | 功能 |
-| --- | --- | --- | --- |
-| GET | `/mail/test` | 否 | 测试邮件发送 |
-| GET | `/auth/code` | 否 | 发送注册验证码 |
-| POST | `/auth/register` | 否 | 用户注册 |
-| POST | `/auth/login` | 否 | 用户登录并获取双 Token |
-| GET | `/auth/verify-access` | Access Token | 验证 Access Token |
-| POST | `/auth/refresh` | Refresh Token | 获取新的 Access Token |
-| POST | `/name/get_names` | Access Token | 生成智能起名方案 |
+### 认证相关
+
+| 方法 | 路径                | 说明                                 |
+| ---- | ------------------- | ------------------------------------ |
+| GET  | /mail/test          | 测试邮件发送                         |
+| GET  | /auth/code          | 发送注册验证码                       |
+| POST | /auth/register      | 用户注册                             |
+| POST | /auth/login         | 登录并获取双 Token                   |
+| GET  | /auth/verify-access | 验证 Access Token                    |
+| POST | /auth/refresh       | 使用 Refresh Token 换新 Access Token |
+
+### 起名与积分相关
+
+| 方法 | 路径            | 说明                     |
+| ---- | --------------- | ------------------------ |
+| POST | /name/get_names | 根据条件生成智能起名方案 |
+| GET  | /credit/balance | 查询当前用户剩余起名次数 |
 
 ## 请求示例
 
-### 获取注册验证码
+### 发送验证码
 
 ```http
 GET http://127.0.0.1:8000/auth/code?email=user@example.com
@@ -302,10 +258,10 @@ Content-Type: application/json
 Authorization: Bearer your_access_token
 
 {
-  "surname": "张",
+  "surname": "陈",
   "gender": "男",
   "length": "两字",
-  "other": "希望名字大气，有文化底蕴",
+  "other": "希望名字有文化底蕴",
   "exclude": ["伟", "强"]
 }
 ```
@@ -317,43 +273,24 @@ Authorization: Bearer your_access_token
   "names": [
     {
       "name": "候选名字",
-      "reference": "文学或文化出处",
-      "moral": "名字寓意"
+      "reference": "出处",
+      "moral": "寓意"
     }
   ]
 }
 ```
 
-### 刷新 Access Token
+## 备注
 
-```http
-POST http://127.0.0.1:8000/auth/refresh
-Authorization: Bearer your_refresh_token
-```
+- 注册成功后会自动赠送 3 次起名机会。
+- 每次成功起名后会扣除 1 次机会。
+- 生成起名时会调用 DeepSeek，若模型返回异常会触发重试逻辑。
+  
+## 后续可扩展方向
 
-## 安全说明
-
-- 密码只保存哈希值，不保存明文。
-- JWT 使用服务端密钥签名，密钥只存放在 `.env`。
-- 注册验证码 5 分钟后自动过期，注册成功后立即删除。
-- 不要在 JWT Payload 中保存密码、密钥等敏感信息。
-- 生产环境应启用 HTTPS，并限制 CORS 来源。
-- 生产环境应关闭 SQLAlchemy 的 `echo=True` 和 Uvicorn 的 `--reload`。
-- 建议为验证码发送接口增加频率限制，避免邮件滥用。
-
-## 开发状态
-
-项目目前处于学习和持续开发阶段。后续可以继续完善：
-
-- 自动化测试
-- Docker / Docker Compose 部署
-- 邮件验证码发送频率限制
-- 用户资料与密码重置
-- 统一异常响应和日志系统
-- 起名历史记录与收藏
-- 管理员权限和内容审核
-- CI/CD 与生产环境部署
-
-## License
-
-本项目暂未指定开源许可证。在添加许可证之前，默认保留全部权利。
+- 增加自动化测试
+- 增加邮件发送频率限制
+- 支持用户资料管理与密码重置
+- 增加起名历史记录与收藏
+- 增加 Docker / Docker Compose 部署
+- 增加管理后台与权限控制

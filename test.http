@@ -21,7 +21,7 @@ Content-Type: application/json
   "username": "testuser",
   "password": "{{password}}",
   "confirm_password": "{{password}}",
-  "code": "5306"
+  "code": "3681"
 }
 
 
@@ -75,11 +75,18 @@ GET {{baseUrl}}/auth/verify-access
 
 POST http://127.0.0.1:8000/name/get_names
 Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ0eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzg0MTg5MTA2fQ.ZlVzKybeJBTRF2sNGDVUYEPquv_TxdWk7Zs6_P5j7Og
+Authorization: Bearer {{login.response.body.$.access_token}}
 
 {
   "surname": "陈",
   "length": "两字",
   "gender": "男",
-  "other": "要尽量大气一点"
+  "other": "单字，简单一点，寄托我对他的期望"
 }
+
+
+### 查询剩余次数
+### 查询剩余次数
+GET http://127.0.0.1:8000/credit/balance
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ0eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzg0NTM0MjIzfQ.XqlVK8JWHtUmj0Zt13vFuAXs6MJ9HQ93jO79TNJW1so
+
