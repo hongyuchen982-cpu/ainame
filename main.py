@@ -28,3 +28,14 @@ app.include_router(name_router)
 
 from routers.credit_router import router as credit_router
 app.include_router(credit_router)
+
+
+from routers.package_router import router as package_router
+app.include_router(package_router)
+
+from routers.pay_router import router as pay_router
+app.include_router(pay_router)
+
+
+from routers.rag_router import router as rag_router
+app.include_router(rag_router)
