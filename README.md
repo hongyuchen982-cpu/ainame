@@ -205,7 +205,7 @@ DEEPSEEK_API_KEY=replace_with_your_deepseek_api_key
 
 # 阿里云百炼 / 通义万相 Logo 生成配置
 DASHSCOPE_API_KEY=replace_with_your_dashscope_api_key
-DASHSCOPE_BASE_URL=your_dashscope_api_base_url
+DASHSCOPE_IMAGE_API_URL=https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
 WANXIANG_MODEL=wan2.6-t2i
 APP_BASE_URL=http://127.0.0.1:8000
 

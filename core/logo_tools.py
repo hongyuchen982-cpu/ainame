@@ -24,6 +24,13 @@ def build_logo_prompt(company_name: str, style_feedback: str = "") -> str:
 
 
 def pick_image_url(data: dict) -> str:
+    """解析通义万相接口返回的图片地址"""
+    # 兼容标准的 text2image 返回格式
+    results = data.get("output", {}).get("results", [])
+    if results and isinstance(results, list):
+        return results[0].get("url", "")
+
+    # 兼容 choices 嵌套格式
     for choice in data.get("output", {}).get("choices", []):
         for item in choice.get("message", {}).get("content", []):
             if item.get("image"):
@@ -33,18 +40,18 @@ def pick_image_url(data: dict) -> str:
 
 def generate_company_logo(company_name: str, style_feedback: str = "") -> dict:
     logo_prompt = build_logo_prompt(company_name, style_feedback)
-    if not settings.DASHSCOPE_API_KEY or not settings.DASHSCOPE_BASE_URL:
+    if not settings.DASHSCOPE_API_KEY or not settings.DASHSCOPE_IMAGE_API_URL:
         return {
             "logo_prompt": logo_prompt,
             "logo_url": "",
-            "logo_status": "未配置 DASHSCOPE_API_KEY 或 DASHSCOPE_BASE_URL",
+            "logo_status": (
+                "未配置 DASHSCOPE_API_KEY 或 DASHSCOPE_IMAGE_API_URL"
+            ),
         }
 
-    request_url = (
-        f"{settings.DASHSCOPE_BASE_URL}"
-        "/services/aigc/multimodal-generation/generation"
-    )
+    request_url = settings.DASHSCOPE_IMAGE_API_URL
 
+    # wan2.6-t2i 使用多模态生成同步接口的 messages 协议。
     payload = {
         "model": settings.WANXIANG_MODEL,
         "input": {
@@ -113,10 +120,22 @@ def generate_company_logo(company_name: str, style_feedback: str = "") -> dict:
             "logo_status": "生成失败：请求超时",
         }
     except httpx.HTTPStatusError as exc:
+        try:
+            error_data = exc.response.json()
+            error_detail = (
+                f"{error_data.get('code', 'UnknownError')} - "
+                f"{error_data.get('message', exc.response.text)}"
+            )
+        except ValueError:
+            error_detail = exc.response.text[:300]
+
         return {
             "logo_prompt": logo_prompt,
             "logo_url": "",
-            "logo_status": f"生成失败：HTTP {exc.response.status_code} {exc.response.text[:200]}",
+            "logo_status": (
+                f"生成失败：HTTP {exc.response.status_code} "
+                f"{error_detail}"
+            ),
         }
     except Exception as exc:
         return {
