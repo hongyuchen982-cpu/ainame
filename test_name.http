@@ -1,0 +1,207 @@
+@baseUrl = http://127.0.0.1:8000
+@email = user@example.com
+@password = your_password
+
+
+############################################
+# 1. 登录
+############################################
+
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+
+############################################
+# 2. 验证 access_token
+############################################
+
+GET {{baseUrl}}/auth/verify-access
+Authorization: Bearer {{login.response.body.$.access_token}}
+
+
+############################################
+# 3. 查询剩余起名次数
+############################################
+
+GET {{baseUrl}}/credit/balance
+Authorization: Bearer {{login.response.body.$.access_token}}
+
+
+############################################
+# 4. 首次生成企业名
+# 保存返回的 thread_id，供后续微调使用
+############################################
+
+# @name generateCompany
+POST {{baseUrl}}/name/generate
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.$.access_token}}
+
+{
+  "category": "企业名",
+  "surname": "",
+  "length": "两字",
+  "gender": "不限",
+  "other": "通过我上传的文件，给我名字",
+  "exclude": []
+}
+
+
+############################################
+# 5. 企业名第二轮微调
+# 自动读取首次生成返回的 thread_id
+############################################
+
+# @name feedbackCompanySecond
+POST {{baseUrl}}/name/feedback
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.$.access_token}}
+
+{
+  "thread_id": "{{generateCompany.response.body.$.thread_id}}",
+  "category": "企业名",
+  "feedback": "请保留上一轮中最有科技感的一个名字，其他四个名字全部改成两个字，并且第一个字使用五行属火的字。"
+}
+
+
+############################################
+# 6. 企业名第三轮微调
+# 继续使用同一个 thread_id
+############################################
+
+# @name feedbackCompanyThird
+POST {{baseUrl}}/name/feedback
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.$.access_token}}
+
+{
+  "thread_id": "{{generateCompany.response.body.$.thread_id}}",
+  "category": "企业名",
+  "feedback": "保留上一轮最好的两个名字，另外三个名字增加未来科技感，但不要出现智、创、新这三个字。"
+}
+
+
+############################################
+# 7. 首次生成人名
+############################################
+
+# @name generateHuman
+POST {{baseUrl}}/name/generate
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.$.access_token}}
+
+{
+  "category": "人名",
+  "surname": "陈",
+  "length": "两字",
+  "gender": "男",
+  "other": "名字简单大方，寄托父母对孩子坚强、正直和自由的期望",
+  "exclude": ["浩", "轩"]
+}
+
+
+############################################
+# 8. 人名第二轮微调
+############################################
+
+# @name feedbackHuman
+POST {{baseUrl}}/name/feedback
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.$.access_token}}
+
+{
+  "thread_id": "{{generateHuman.response.body.$.thread_id}}",
+  "category": "人名",
+  "feedback": "保留上一轮中最简洁的一个名字，其他四个名字改得更有古典文学气息，并优先参考《楚辞》。"
+}
+
+
+############################################
+# 9. 首次生成宠物名
+############################################
+
+# @name generatePet
+POST {{baseUrl}}/name/generate
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.$.access_token}}
+
+{
+  "category": "宠物名",
+  "surname": "",
+  "length": "两字",
+  "gender": "不限",
+  "other": "一只非常调皮的金毛犬，毛发金黄，希望名字听起来活泼可爱",
+  "exclude": ["旺财", "来福"]
+}
+
+
+############################################
+# 10. 宠物名第二轮微调
+############################################
+
+# @name feedbackPet
+POST {{baseUrl}}/name/feedback
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.$.access_token}}
+
+{
+  "thread_id": "{{generatePet.response.body.$.thread_id}}",
+  "category": "宠物名",
+  "feedback": "保留上一轮最可爱的一个名字，其他四个名字改得更短、更容易呼喊，并体现它金黄色的毛发。"
+}
+
+
+############################################
+# 11. 再次查询剩余次数
+# 查看首次生成和微调是否扣除了次数
+############################################
+
+GET {{baseUrl}}/credit/balance
+Authorization: Bearer {{login.response.body.$.access_token}}
+
+
+############################################
+# 12. 刷新 access_token
+############################################
+
+# @name refreshToken
+POST {{baseUrl}}/auth/refresh
+Authorization: Bearer {{login.response.body.$.refresh_token}}
+
+
+############################################
+# 13. 使用刷新后的 access_token 验证
+############################################
+
+GET {{baseUrl}}/auth/verify-access
+Authorization: Bearer {{refreshToken.response.body.$.access_token}}
+
+### 上传个人知识库
+POST http://127.0.0.1:8000/knowledge/upload
+Authorization: Bearer {{login.response.body.$.access_token}}
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+Accept: application/json
+
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="company_rules.txt"
+Content-Type: text/plain
+
+< ./company_rules.txt
+--WebAppBoundary--
+
+### 生成企业Logo
+POST http://127.0.0.1:8000/logos/generate
+Authorization: Bearer {{login.response.body.$.access_token}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "company_name": "青衍科技",
+  "style_feedback": ""
+}

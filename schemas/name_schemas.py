@@ -7,7 +7,9 @@ class NameSchema(BaseModel):
     name: Annotated[str, Field(..., description="姓名")]
     reference: Annotated[str, Field(..., description="出处")]
     moral: Annotated[str, Field(..., description="寓意")]
-
+    domain: str = Field(..., description="为该品牌设计的纯小写 .com 域名，例如: astar.com")
+# 👇 新增：默认状态，稍后由我们的工具自动填入
+    domain_status: str = Field(default="正在查询...", description="域名的注册状态")
 class NameResultSchema(BaseModel):
     names: List[NameSchema]
 
@@ -53,3 +55,12 @@ class NameIn(BaseModel):
 
 class NameOut(BaseModel):
     names: List[NameSchema]
+
+class NameWithThreadOut(BaseModel):
+    thread_id: str
+    names: List[NameSchema]
+
+class FeedbackIn(BaseModel):
+    thread_id: str = Field(..., description="前端回传的会话ID")
+    category: Literal["人名", "企业名", "宠物名"] = Field(..., description="路由依据")
+    feedback: str = Field(..., description="用户的修改意见，")

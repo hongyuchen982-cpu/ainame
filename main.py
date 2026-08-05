@@ -1,9 +1,31 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI,Depends
 from fastapi_mail import FastMail, MessageSchema, MessageType
 from dependencies import get_email
+from core.workflow import (
+    start_naming_memory,
+    stop_naming_memory,
+)
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+from routers.logo_router import router as logo_router
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await start_naming_memory()
+
+    try:
+        yield
+    finally:
+        await stop_naming_memory()
 
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
+BACKEND_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BACKEND_DIR / "static"
+(STATIC_DIR / "logos").mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/mail/test")
@@ -39,3 +61,5 @@ app.include_router(pay_router)
 
 from routers.rag_router import router as rag_router
 app.include_router(rag_router)
+
+app.include_router(logo_router)
