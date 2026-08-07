@@ -8,3 +8,12 @@ __pycache__/
 chroma_rag_db/
 uploads/
 static/logos/
+
+# Node.js frontend artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+# Generated intermediate artifacts
+tmp/
+output/pdf/

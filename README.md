@@ -1,10 +1,10 @@
-# AI Name - 智能起名后端
+# 一念 AI Name - 智能起名全栈应用
 
-AI Name 是一个基于 FastAPI、SQLAlchemy 异步 ORM、Redis、DeepSeek 和 LangGraph 的智能起名后端项目。它提供用户认证、多场景 AI 起名、基于 PostgreSQL Checkpoint 的多轮微调、用户专属 RAG 知识库、企业域名可用性查询、AI Logo 生成、起名次数管理、套餐购买和支付宝支付能力。
+一念 AI Name 是一个完整的智能起名 Web 应用。前端使用 React、Vite 和 Node.js，后端使用 FastAPI、SQLAlchemy 异步 ORM、Redis、DeepSeek 与 LangGraph。项目提供用户认证、多场景 AI 起名、基于 PostgreSQL Checkpoint 的多轮微调、用户专属 RAG 知识库、企业域名可用性查询、AI Logo 生成、起名次数管理、套餐购买和支付宝支付能力。
 
 ## 项目定位
 
-这个项目的目标是把“姓名起名”流程做成一个可扩展的后端服务，支持：
+这个项目的目标是把“智能起名”流程做成一个可直接使用、可继续扩展的全栈产品，支持：
 
 - 用户注册与登录
 - 邮箱验证码校验
@@ -16,6 +16,8 @@ AI Name 是一个基于 FastAPI、SQLAlchemy 异步 ORM、Redis、DeepSeek 和 L
 - 使用通义万相为企业生成 Logo 图形
 - 注册赠送起名次数，并在起名成功后扣减次数
 - 查询套餐、创建订单并通过支付宝购买起名次数
+- 响应式 Web 前端，适配桌面和移动设备
+- Access Token 失效后通过 Refresh Token 自动续期
 - 通过 Swagger / ReDoc 直接测试接口
 
 ## 已实现功能
@@ -41,9 +43,23 @@ AI Name 是一个基于 FastAPI、SQLAlchemy 异步 ORM、Redis、DeepSeek 和 L
 - 支持支付宝网页支付、同步回跳验签和异步通知处理
 - 支付成功后自动增加起名次数，并通过订单状态和数据库锁避免重复入账
 - 使用 SQLAlchemy 2.x 异步 ORM + Alembic 数据库迁移
+- React 单页应用，覆盖首页、智能起名、知识库、Logo 和套餐页面
+- 前端统一封装 API、登录状态、Token 自动刷新、加载状态和错误提示
+- Vite 开发代理连接 FastAPI，本地开发无需额外配置 CORS
+- 响应式布局，支持桌面端、平板和手机端
 - 提供 Windows 启动脚本与 VS Code HTTP 测试文件
 
 ## 技术栈
+
+### 前端
+
+- Node.js 20.19+（Vite 8 要求）
+- React 19
+- Vite 8
+- Lucide React
+- 原生 CSS 响应式设计
+
+### 后端与基础设施
 
 - Web 框架：FastAPI、Uvicorn
 - 数据校验：Pydantic
@@ -67,6 +83,15 @@ AI Name 是一个基于 FastAPI、SQLAlchemy 异步 ORM、Redis、DeepSeek 和 L
 
 ```text
 ai_name/
+├── frontend/                   # React + Vite 前端
+│   ├── src/
+│   │   ├── App.jsx            # 页面、组件与前端业务流程
+│   │   ├── api.js             # API 请求、Token 刷新与资源地址处理
+│   │   ├── main.jsx           # React 入口
+│   │   └── styles.css         # 视觉系统与响应式样式
+│   ├── .env.example           # 前端 API 地址示例
+│   ├── package.json           # Node.js 依赖与脚本
+│   └── vite.config.js         # Vite 配置与本地代理
 ├── alembicdb/                  # Alembic 迁移脚本与环境
 ├── core/
 │   ├── authtools.py           # JWT 生成、解析与鉴权依赖
@@ -113,6 +138,8 @@ ai_name/
 ├── init_pg_memory.py          # 初始化 LangGraph PostgreSQL Checkpoint 表
 ├── main.py                    # FastAPI 应用入口
 ├── rag_worker.py              # RabbitMQ 知识库任务消费者
+├── scripts/
+│   └── build_ainame_textbook.py # 教材 PDF 生成脚本
 ├── start.bat                  # Windows 一键启动脚本
 ├── test.http                  # VS Code REST Client 请求示例
 ├── test_name.http             # 多轮起名、知识库与 Logo 请求示例
@@ -122,6 +149,7 @@ ai_name/
 
 ## 环境要求
 
+- Node.js 20.19+ 与 npm
 - Python 3.11+
 - MySQL 8.x
 - PostgreSQL 14+（保存 LangGraph 多轮记忆）
@@ -134,6 +162,27 @@ ai_name/
 - 支付宝开放平台应用（如需测试支付功能）
 
 ## 快速开始
+
+如果数据库、Redis、RabbitMQ 和环境变量都已经准备好，本地开发只需打开两个终端：
+
+终端 1，启动 FastAPI 后端：
+
+```powershell
+cd ai_name
+python -m uvicorn main:app --reload
+```
+
+终端 2，启动 React 前端：
+
+```powershell
+cd ai_name\frontend
+npm install
+npm run dev
+```
+
+浏览器访问 `http://127.0.0.1:5173`。后端接口文档位于 `http://127.0.0.1:8000/docs`。
+
+首次部署请继续完成下面的完整初始化步骤。
 
 ### 1. 克隆项目
 
@@ -282,7 +331,7 @@ python rag_worker.py
 
 Worker 会逐个处理队列中的文档，执行解析、切片、向量化并写入用户专属 Chroma Collection。
 
-### 13. 启动服务
+### 13. 启动后端服务
 
 ```bash
 uvicorn main:app --reload
@@ -298,6 +347,47 @@ start.bat
 
 - Swagger UI: http://127.0.0.1:8000/docs
 - ReDoc: http://127.0.0.1:8000/redoc
+
+### 14. 安装并启动前端
+
+新开一个终端：
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Vite 默认在 `http://127.0.0.1:5173` 提供页面，并将 `/api/*` 代理到
+`http://127.0.0.1:8000/*`。开发环境无需修改 FastAPI 的 CORS 配置。
+
+### 15. 生产构建前端
+
+```powershell
+cd frontend
+npm run build
+```
+
+构建产物会生成到 `frontend/dist/`。如果前后端使用不同域名部署，可复制
+`frontend/.env.example` 为 `frontend/.env.local`，并配置：
+
+```env
+VITE_API_BASE=https://api.example.com
+```
+
+跨域部署时，还需要在 FastAPI 或反向代理中允许前端站点的 Origin。生产环境更推荐
+通过 Nginx 将 `/api` 反向代理到 FastAPI，从而保留默认的同源配置。
+
+## 前端页面与功能
+
+| 页面 | 功能 |
+| ---- | ---- |
+| 首页 | 产品介绍、三类起名入口与使用流程 |
+| 智能起名 | 人名、企业名、宠物名生成，结果释义与连续反馈微调 |
+| 专属知识库 | 上传 TXT/PDF 品牌资料，构建用户隔离的 RAG 知识库 |
+| 品牌 Logo | 根据企业名称与风格要求生成 Logo，并查看原图 |
+| 套餐 | 查询上架套餐、创建订单并跳转支付宝收银台 |
+| 认证弹窗 | 邮箱验证码、注册、登录、退出与 Token 自动刷新 |
 
 ## 接口说明
 
