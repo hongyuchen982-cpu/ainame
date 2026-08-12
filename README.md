@@ -468,8 +468,103 @@ VITE_API_BASE=https://api.example.com
 | 智能起名 | 生成 5 个候选名、连续反馈微调，并确认 1 个最终名称 |
 | 专属知识库 | 上传 TXT/PDF 品牌资料，构建用户隔离的 RAG 知识库 |
 | 品牌 Logo | 读取已选定的企业名称，设置风格并生成 Logo、查看原图 |
+| 名称校验 | 校验域名、商标、企业和社交平台风险，并保存校验历史 |
+| 品牌资产 | 根据最终企业名生成定位、Slogan、Logo 概念和域名矩阵 |
+| 命名报告 | 汇总项目、候选轮次、最终选名、校验和品牌资产，生成 PDF |
+| 专家服务 | 专家入驻、服务套餐、精批订单、交付报告、评价与结算 |
+| 社区投票 | 发布候选名投票、投票、评论、举报与社区精选 |
+| 开放平台 | 开发者账号、API Key、套餐额度、单次/批量命名和调用统计 |
+| 邀请有礼 | 推广码、邀请关系、次数奖励与佣金记录 |
+| 我的项目 | 查看项目轮次、候选名、最终选名、归档和恢复 |
+| 我的订单 | 查看订单与交易流水，继续支付、同步状态或关闭订单 |
+| 我的任务 | 查看异步任务进度和失败原因，并重试失败任务 |
+| 我的次数 | 查看次数余额、累计使用和完整权益流水 |
 | 套餐 | 查询上架套餐、创建订单并跳转支付宝收银台 |
+| 用户中心 | 资料、头像、密码、登录设备、安全记录与业务数据总览 |
+| 运营后台 | 用户、权限、次数、套餐、订单、项目、报告、知识库、任务及业务模块管理 |
 | 登录/注册入口 | 未登录时覆盖全站，支持邮箱验证码注册、登录和 Token 自动刷新 |
+
+## 本地功能验收
+
+### 1. 启动完整开发环境
+
+确认 MySQL、PostgreSQL、Redis 和 RabbitMQ 已启动，并在项目根目录执行：
+
+```powershell
+conda activate fastapi-env
+alembic upgrade head
+python init_pg_memory.py
+python run_server.py --reload
+```
+
+知识库上传和异步解析还需要第三个终端：
+
+```powershell
+conda activate fastapi-env
+cd D:\Code\1\ai_name
+python rag_worker.py
+```
+
+前端使用另一个终端：
+
+```powershell
+cd D:\Code\1\ai_name\frontend
+npm install
+npm run dev
+```
+
+打开以下地址：
+
+- 用户前端：http://127.0.0.1:5173
+- Swagger 接口调试：http://127.0.0.1:8000/docs
+- ReDoc 接口文档：http://127.0.0.1:8000/redoc
+
+### 2. 准备测试账号
+
+普通用户可以在前端注册。若邮件服务尚未配置，可先使用 Swagger 或 Redis/测试环境完成验证码流程。管理员账号在迁移完成后创建：
+
+```powershell
+python scripts/create_admin.py admin@example.com --username 管理员
+```
+
+脚本会在终端询问密码。管理员登录后，页面导航会出现“运营后台”。
+
+### 3. 推荐手工验收顺序
+
+1. 注册、登录、退出，再测试密码找回、资料修改和登录设备撤销。
+2. 进入“智能起名”，分别测试人名、企业名、宠物名，提交反馈生成第二轮，并确认最终名称。
+3. 在“我的项目”确认轮次和最终选名已经保存，再测试归档与恢复。
+4. 对企业最终名称执行“名称校验”，然后生成“品牌资产”和“品牌 Logo”。
+5. 进入“命名报告”生成 PDF，下载后检查中文字体、分页、表格和品牌资产章节。
+6. 上传 TXT/PDF 到“专属知识库”，同时观察“我的任务”和 Worker 终端，确认最终状态为已完成。
+7. 在“套餐”创建测试订单；支付宝功能必须使用沙箱配置，避免在开发环境产生真实交易。
+8. 测试专家入驻、管理员审核、专家套餐、用户下单、专家交付、用户评价和管理员结算。
+9. 发布社区投票，用另一个用户投票、评论和举报，再由管理员精选或处理举报。
+10. 开通开发者账号，创建 API Key、领取体验额度，并按页面 curl 示例测试单次和批量命名。
+11. 复制“邀请有礼”的注册链接，使用新浏览器或无痕窗口注册，检查双方次数奖励和支付佣金记录。
+12. 管理员依次检查用户、角色审计、次数、套餐、订单详情、项目、报告、知识库、任务及各业务后台。
+
+### 4. 自动化回归
+
+前端测试与生产构建：
+
+```powershell
+cd D:\Code\1\ai_name\frontend
+npm test
+npm run build
+```
+
+后端编译、迁移状态和全部集成测试：
+
+```powershell
+cd D:\Code\1\ai_name
+python -m compileall -q .
+alembic current
+alembic heads
+python -m unittest tests.test_auth_stage_integration tests.test_community_stage_integration tests.test_developer_stage_integration tests.test_expert_stage_integration tests.test_growth_stage_integration
+```
+
+集成测试会写入本地测试数据并在结束时清理；请勿让测试环境指向生产数据库。
 
 ## 接口说明
 
