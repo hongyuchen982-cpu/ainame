@@ -420,7 +420,7 @@ async def start_naming_memory() -> None:
         checkpointer=memory
     )
 
-    print("✅ PostgreSQL 记忆连接池启动成功")
+    print("[OK] PostgreSQL 记忆连接池启动成功")
 
 
 async def stop_naming_memory() -> None:
@@ -434,7 +434,7 @@ async def stop_naming_memory() -> None:
 
     await connection_pool.close()
 
-    print("✅ PostgreSQL 记忆连接池已关闭")
+    print("[OK] PostgreSQL 记忆连接池已关闭")
 
 
 # ==================== 第一次生成 ====================
@@ -490,6 +490,71 @@ async def generate_names_v2(
     }
 
 
+async def get_naming_candidates(
+    thread_id: str,
+    user_id: int,
+) -> tuple[str, List[Dict[str, Any]]]:
+    """读取当前 thread 的最新候选名，并校验它属于当前用户。"""
+
+    if naming_graph is None:
+        raise RuntimeError(
+            "命名工作流尚未初始化，请检查 FastAPI lifespan"
+        )
+
+    config = {"configurable": {"thread_id": thread_id}}
+    snapshot = await naming_graph.aget_state(config=config)
+    values = dict(snapshot.values or {})
+
+    if not values:
+        raise ValueError("命名会话不存在或已经失效")
+    if values.get("user_id") != user_id:
+        raise PermissionError("无权访问该命名会话")
+
+    final_output = values.get("final_output") or {}
+    candidates = final_output.get("names") or []
+    if not candidates:
+        raise ValueError("该命名会话中没有可选候选名")
+
+    return values.get("category", ""), candidates
+
+
+async def get_naming_state(thread_id: str, user_id: int) -> Dict[str, Any]:
+    """获取可用于失败补偿的完整命名状态，并校验会话所有权。"""
+
+    if naming_graph is None:
+        raise RuntimeError("命名工作流尚未初始化，请检查 FastAPI lifespan")
+    config = {"configurable": {"thread_id": thread_id}}
+    snapshot = await naming_graph.aget_state(config=config)
+    values = dict(snapshot.values or {})
+    if not values:
+        raise ValueError("命名会话不存在或已经失效")
+    if values.get("user_id") != user_id:
+        raise PermissionError("无权访问该命名会话")
+    return values
+
+
+async def restore_naming_state(
+    thread_id: str,
+    user_id: int,
+    values: Dict[str, Any],
+) -> None:
+    """MySQL 落库失败时，把 LangGraph 的最新状态恢复到调用前。"""
+
+    if naming_graph is None:
+        raise RuntimeError("命名工作流尚未初始化，请检查 FastAPI lifespan")
+    if values.get("user_id") != user_id:
+        raise PermissionError("无权恢复该命名会话")
+    config = {"configurable": {"thread_id": thread_id}}
+    await naming_graph.aupdate_state(config=config, values=values)
+
+
+async def delete_naming_thread(thread_id: str) -> None:
+    """首次生成未能写入业务库时，清除孤立的 LangGraph checkpoint。"""
+
+    if memory is not None:
+        await memory.adelete_thread(thread_id)
+
+
 # ==================== 第二次及以后微调 ====================
 
 async def feedback_names(
@@ -507,6 +572,11 @@ async def feedback_names(
         raise RuntimeError(
             "命名工作流尚未初始化，请检查 FastAPI lifespan"
         )
+
+    await get_naming_candidates(
+        thread_id=feedback_info.thread_id,
+        user_id=user_id,
+    )
 
     update_state = {
         "feedback": feedback_info.feedback,

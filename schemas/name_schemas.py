@@ -1,7 +1,7 @@
 
-from pydantic import BaseModel, Field
-from typing import Annotated, Literal,List
-from pydantic import BaseModel, Field, model_validator
+from typing import Annotated, List, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class NameSchema(BaseModel):
     name: Annotated[str, Field(..., description="姓名")]
@@ -16,6 +16,7 @@ class NameResultSchema(BaseModel):
 
 CategoryLiteral = Literal["人名", "企业名", "宠物名"]
 class NameIn(BaseModel):
+    project_id: int | None = Field(None, ge=1, description="可选的草稿项目 ID")
     category: Annotated[
         CategoryLiteral,
         Field("人名", description="命名场景：人名、企业名、宠物名")
@@ -58,9 +59,31 @@ class NameOut(BaseModel):
 
 class NameWithThreadOut(BaseModel):
     thread_id: str
+    project_id: int
     names: List[NameSchema]
 
 class FeedbackIn(BaseModel):
     thread_id: str = Field(..., description="前端回传的会话ID")
     category: Literal["人名", "企业名", "宠物名"] = Field(..., description="路由依据")
     feedback: str = Field(..., description="用户的修改意见，")
+
+
+class NameSelectIn(BaseModel):
+    thread_id: str = Field(..., min_length=1, max_length=100)
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+class SelectedNameOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int | None
+    thread_id: str
+    category: CategoryLiteral
+    name: str
+    reference: str
+    moral: str
+    logo_prompt: str
+    logo_url: str
+    logo_status: str
+    can_generate_logo: bool

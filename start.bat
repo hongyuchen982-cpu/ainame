@@ -34,7 +34,7 @@ if errorlevel 1 (
 echo Starting FastAPI...
 echo Open http://127.0.0.1:8000/docs in your browser.
 echo.
-uvicorn main:app --reload
+python run_server.py --reload
 
 if errorlevel 1 (
     echo.

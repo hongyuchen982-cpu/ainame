@@ -63,6 +63,11 @@ class CreditLog(Base):
     
     # 流水说明
     remark: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+
+    # 业务幂等键；同一次扣次、返还或后台调整只能记账一次。
+    operation_id: Mapped[str | None] = mapped_column(
+        String(100), unique=True, nullable=True, index=True
+    )
     
     created_at: Mapped[datetime] = mapped_column(
         DateTime,

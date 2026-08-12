@@ -28,6 +28,10 @@ autoincrement=True)
         ForeignKey("package.id"),
         nullable=False,
     )
+    package_name: Mapped[str] = mapped_column(String(100), default="", nullable=False)
+    client_request_id: Mapped[str | None] = mapped_column(
+        String(100), unique=True, index=True, nullable=True
+    )
     # 支付金额
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     # 购买次数
@@ -47,3 +51,9 @@ nullable=False)
         DateTime,
         nullable=True,
     )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    refund_amount: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

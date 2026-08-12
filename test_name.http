@@ -195,13 +195,24 @@ Content-Type: text/plain
 < ./company_rules.txt
 --WebAppBoundary--
 
-### 生成企业Logo
-POST http://127.0.0.1:8000/logos/generate
+### 从第三轮企业候选名中选定第一个作为最终名称
+# @name selectCompany
+POST {{baseUrl}}/name/select
+Authorization: Bearer {{login.response.body.$.access_token}}
+Content-Type: application/json
+
+{
+  "thread_id": "{{generateCompany.response.body.$.thread_id}}",
+  "name": "{{feedbackCompanyThird.response.body.$.names[0].name}}"
+}
+
+### 使用已选定的企业名称生成 Logo
+POST {{baseUrl}}/logos/generate
 Authorization: Bearer {{login.response.body.$.access_token}}
 Content-Type: application/json
 Accept: application/json
 
 {
-  "company_name": "青衍科技",
-  "style_feedback": ""
+  "selection_id": {{selectCompany.response.body.$.id}},
+  "style_feedback": "极简现代、青绿色、带有未来科技感"
 }
