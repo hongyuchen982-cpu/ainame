@@ -21,6 +21,7 @@
 - 注册赠送起名次数，并在起名成功后扣减次数
 - 查询套餐、创建订单并通过支付宝购买起名次数
 - 响应式 Web 前端，适配桌面和移动设备
+- 独立 Vue 3 uni-app 移动端，可通过 HBuilderX 打包 Android APK
 - Access Token 失效后通过 Refresh Token 自动续期
 - 通过 Swagger / ReDoc 直接测试接口
 
@@ -126,6 +127,10 @@ ai_name/
 │   ├── .env.example           # 前端 API 地址示例
 │   ├── package.json           # Node.js 依赖与脚本
 │   └── vite.config.js         # Vite 配置与本地代理
+├── mobile-uniapp/              # Vue 3 uni-app 移动端（Android/iOS/H5/小程序）
+│   ├── src/                    # 页面、API、配置和 manifest
+│   ├── .env.example           # 真机 API 地址示例
+│   └── README.md              # HBuilderX 运行与 APK 打包指南
 ├── alembicdb/                  # Alembic 迁移脚本与环境
 ├── core/
 │   ├── authtools.py           # JWT 生成、解析与鉴权依赖
@@ -268,6 +273,24 @@ npm run dev
 浏览器访问 `http://127.0.0.1:5173`。后端接口文档位于 `http://127.0.0.1:8000/docs`。
 
 移动端另有独立 Vue 3 uni-app 工程 `mobile-uniapp`，可用 HBuilderX 运行到 H5、Android、iOS 或小程序。详细使用方式见 `mobile-uniapp/README.md`。
+
+### 移动端 APK 打包与真机登录
+
+1. 运行根目录 `start.bat`，确保 FastAPI 显示监听 `0.0.0.0:8000`。
+2. 在手机浏览器访问 `http://电脑局域网IP:8000/docs`；能打开接口文档后再测试 App。
+3. 在 `mobile-uniapp` 创建 `.env.local`，将 API 地址改成当前电脑的局域网 IP：
+
+```env
+VITE_API_BASE=http://192.168.31.211:8000
+```
+
+4. 手机与电脑连接同一 Wi-Fi，并关闭可能改变网络路径的 VPN；Windows 防火墙需允许 TCP 8000 入站。
+5. HBuilderX 选择“文件 → 打开目录”，直接打开 `mobile-uniapp`，不要新建一个空白 demo 工程。
+6. 打开 `src/manifest.json`，申请 DCloud AppID，并配置 Android 包名、图标和签名。
+7. 选择“发行 → 原生 App-云打包”，平台选择 Android；测试阶段可使用公共测试证书，正式发布必须使用自己的证书。
+8. APK 安装后使用网站已有邮箱和密码登录；移动端与 Web 端共用后端、数据库和账号。
+
+若打包出现 `There is insufficient memory for the Java Runtime Environment` 或错误码 `1455`，请关闭占用内存的软件，并在 Windows“高级系统设置 → 性能 → 高级 → 虚拟内存”中启用系统管理大小，重启电脑后重新打包。正式上线时必须将局域网 HTTP 地址替换为可公网访问的 HTTPS API 域名。
 
 首次部署请继续完成下面的完整初始化步骤。
 
