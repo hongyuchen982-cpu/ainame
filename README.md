@@ -578,6 +578,14 @@ alembic heads
 python -m unittest tests.test_auth_stage_integration tests.test_community_stage_integration tests.test_developer_stage_integration tests.test_expert_stage_integration tests.test_growth_stage_integration
 ```
 
+使用现有普通用户逐项检查用户页面接口，并使用自动清理的隔离管理员检查后台页面接口：
+
+```powershell
+python scripts/audit_page_apis.py --email 你的普通用户邮箱
+```
+
+脚本不会修改目标用户的密码、角色或业务数据；临时设备会话与隔离管理员会在结束时删除。
+
 集成测试会写入本地测试数据并在结束时清理；请勿让测试环境指向生产数据库。
 
 ## 接口说明

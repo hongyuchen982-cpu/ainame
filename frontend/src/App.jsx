@@ -22,6 +22,14 @@ function Toast({ toast, close }) {
   return <div className={`toast ${toast.type || ''}`}><span>{toast.message}</span><button onClick={close}><X size={16}/></button></div>
 }
 
+function PageLoadError({ title = '页面暂时没有加载成功', message, retry, go }) {
+  return <main className="page-shell wrap narrow"><div className="empty-state standalone"><Flag/><h3>{title}</h3><p>{message || '请检查服务状态后重试。'}</p><div className="order-actions">{retry && <button className="red-button" onClick={retry}>重新加载</button>}{go && <button className="outline-button" onClick={() => go('home')}>返回首页</button>}</div></div></main>
+}
+
+function AccessDeniedPage({ area, go }) {
+  return <main className="page-shell wrap narrow"><div className="empty-state standalone"><ShieldCheck/><h3>当前账号没有{area}权限</h3><p>这不是页面加载失败。请使用具备对应角色或权限的账号重新登录；角色变更后旧登录会话会自动失效。</p><div className="order-actions"><button className="red-button" onClick={() => go('account')}>查看当前账号</button><button className="outline-button" onClick={() => go('home')}>返回首页</button></div></div></main>
+}
+
 function Header({ page, go, session, balance, openAuth, logout }) {
   const [mobile, setMobile] = useState(false)
   const nav = (id) => { go(id); setMobile(false) }
@@ -446,14 +454,15 @@ function AdminCommunityPage({ notify }) {
 }
 
 function DevelopersPage({ notify }) {
-  const [account,setAccount]=useState(undefined),[keys,setKeys]=useState([]),[plans,setPlans]=useState([]),[subs,setSubs]=useState([]),[usage,setUsage]=useState([]),[summary,setSummary]=useState(null),[revealed,setRevealed]=useState(null),[keyName,setKeyName]=useState('生产环境 Key')
+  const [account,setAccount]=useState(undefined),[keys,setKeys]=useState([]),[plans,setPlans]=useState([]),[subs,setSubs]=useState([]),[usage,setUsage]=useState([]),[summary,setSummary]=useState(null),[loadError,setLoadError]=useState(''),[revealed,setRevealed]=useState(null),[keyName,setKeyName]=useState('生产环境 Key')
   const [form,setForm]=useState({company_name:'',contact_name:'',use_case:''})
-  const load=()=>Promise.all([api.developerAccount(),api.apiPlans(),api.apiSubscriptions(),api.apiUsage(),api.apiUsageSummary()]).then(async([a,p,s,u,m])=>{setAccount(a);setPlans(p);setSubs(s);setUsage(u);setSummary(m);setKeys(a?await api.developerKeys():[])}).catch((e)=>notify(e.message,'error'))
+  const load=()=>{setLoadError('');return Promise.all([api.developerAccount(),api.apiPlans(),api.apiSubscriptions(),api.apiUsage(),api.apiUsageSummary()]).then(async([a,p,s,u,m])=>{setAccount(a);setPlans(p);setSubs(s);setUsage(u);setSummary(m);setKeys(a?await api.developerKeys():[])}).catch((e)=>{setLoadError(e.message);notify(e.message,'error')})}
   useEffect(load,[])
   const createAccount=async(e)=>{e.preventDefault();try{await api.createDeveloperAccount(form);await load();notify('开发者账号已开通。','success')}catch(e){notify(e.message,'error')}}
   const createKey=async(e)=>{e.preventDefault();try{const item=await api.createDeveloperKey(keyName);setRevealed(item.api_key);await load()}catch(e){notify(e.message,'error')}}
   const revoke=async(id)=>{if(!confirm('撤销后使用该 Key 的系统会立即无法调用，确定吗？'))return;try{await api.revokeDeveloperKey(id);await load()}catch(e){notify(e.message,'error')}}
   const subscribe=async(id)=>{try{await api.subscribeApiPlan(id);await load();notify('体验额度已到账。','success')}catch(e){notify(e.message,'error')}}
+  if(account===undefined&&loadError)return <PageLoadError title="开放平台加载失败" message={loadError} retry={load}/>
   if(account===undefined)return <main className="page-shell wrap"><div className="center-loading"><LoaderCircle className="spin"/> 正在读取开放平台…</div></main>
   if(!account)return <main className="page-shell wrap narrow"><div className="page-title"><span className="eyebrow"><KeyRound size={14}/> B 端开放平台</span><h1>把智能命名能力，接入你的产品</h1><p>开通开发者账号后，可以创建 API Key、领取体验额度并调用单次或批量命名接口。</p></div><form className="account-card developer-onboarding" onSubmit={createAccount}><input required placeholder="公司或团队名称" value={form.company_name} onChange={(e)=>setForm({...form,company_name:e.target.value})}/><input required placeholder="联系人" value={form.contact_name} onChange={(e)=>setForm({...form,contact_name:e.target.value})}/><textarea required minLength="10" rows="6" placeholder="说明接入场景和预计用途" value={form.use_case} onChange={(e)=>setForm({...form,use_case:e.target.value})}/><button className="red-button">开通开发者账号</button></form></main>
   return <main className="page-shell wrap"><div className="page-title"><span className="eyebrow"><KeyRound size={14}/> B 端开放平台</span><h1>{account.company_name} · 开发者控制台</h1><p>管理调用凭证、套餐额度和 API 使用记录。</p></div><section className="developer-summary"><article><BarChart3/><b>{summary?.calls_total||0}</b><span>请求总数</span></article><article><Coins/><b>{summary?.units_total||0}</b><span>计费单位</span></article><article><Check/><b>{summary?.success_total||0}</b><span>成功调用</span></article><article><Flag/><b>{summary?.failed_total||0}</b><span>失败调用</span></article></section>{revealed&&<div className="developer-secret"><ShieldCheck/><div><b>请立即复制并安全保存，关闭后无法再次查看</b><code>{revealed}</code></div><button onClick={()=>navigator.clipboard.writeText(revealed)}>复制 Key</button><button onClick={()=>setRevealed(null)}>我已保存</button></div>}<section className="developer-grid"><div className="account-card"><h2>API Key</h2><form className="developer-key-form" onSubmit={createKey}><input required value={keyName} onChange={(e)=>setKeyName(e.target.value)}/><button className="red-button">创建 Key</button></form>{keys.map((k)=><article className="developer-key" key={k.id}><div><b>{k.name}</b><code>{k.key_prefix}••••••••</code><small>{k.last_used_at?`最后调用 ${new Date(k.last_used_at).toLocaleString()}`:'尚未调用'}</small></div><span>{k.status==='active'?'有效':'已撤销'}</span>{k.status==='active'&&<button className="danger-link" onClick={()=>revoke(k.id)}>撤销</button>}</article>)}</div><div className="account-card"><h2>API 套餐与余额</h2>{subs.map((s)=><article className="developer-subscription" key={s.id}><b>{s.plan_name}</b><strong>{s.quota_remaining}</strong><span>剩余额度 / {s.quota_total}</span><div><i style={{width:`${Math.min(100,s.quota_used*100/s.quota_total)}%`}}/></div><small>有效期至 {new Date(s.expires_at).toLocaleDateString()}</small></article>)}{plans.map((p)=><article className="developer-plan" key={p.id}><div><b>{p.name}</b><p>{p.description}</p></div><strong>{Number(p.price)===0?'免费':`¥${Number(p.price).toFixed(2)}`}</strong>{Number(p.price)===0?<button className="outline-button" onClick={()=>subscribe(p.id)}>领取</button>:<span>联系管理员开通</span>}</article>)}</div></section><section className="account-card developer-docs"><h2>快速接入</h2><pre>{`curl -X POST /api/openapi/v1/names/generate \\\n  -H "X-API-Key: qmk_live_xxx" \\\n  -H "Content-Type: application/json" \\\n  -d '{"request_id":"your-unique-id","category":"企业名","surname":"","gender":"不限","length":"两字","other":"科技品牌","exclude":[]}'`}</pre><p>批量接口：<code>POST /api/openapi/v1/names/batch</code>，每批最多 10 个任务，按任务数扣减额度。相同 Key 与 request_id 会返回原响应且不重复计费。</p></section><section className="account-card"><h2>调用记录</h2><div className="developer-usage">{usage.map((u)=><article key={u.id}><span className={`knowledge-status ${u.status==='success'?'completed':'failed'}`}>{u.status==='success'?'成功':'失败'}</span><code>{u.endpoint}</code><b>{u.units} 单位</b><span>{u.latency_ms} ms</span><small>{new Date(u.created_at).toLocaleString()} · {u.request_id}</small></article>)}</div></section></main>
@@ -470,10 +479,11 @@ function AdminDevelopersPage({ notify }) {
 }
 
 function GrowthPage({ notify }) {
-  const [promotion,setPromotion]=useState(null),[referrals,setReferrals]=useState([]),[rewards,setRewards]=useState([]),[commissions,setCommissions]=useState([])
-  const load=()=>Promise.all([api.growthPromotion(),api.growthReferrals(),api.growthRewards(),api.growthCommissions()]).then(([p,r,w,c])=>{setPromotion(p);setReferrals(r);setRewards(w);setCommissions(c)}).catch((e)=>notify(e.message,'error'))
+  const [promotion,setPromotion]=useState(null),[referrals,setReferrals]=useState([]),[rewards,setRewards]=useState([]),[commissions,setCommissions]=useState([]),[loadError,setLoadError]=useState('')
+  const load=()=>{setLoadError('');return Promise.all([api.growthPromotion(),api.growthReferrals(),api.growthRewards(),api.growthCommissions()]).then(([p,r,w,c])=>{setPromotion(p);setReferrals(r);setRewards(w);setCommissions(c)}).catch((e)=>{setLoadError(e.message);notify(e.message,'error')})}
   useEffect(load,[])
   const copy=async(value)=>{try{await navigator.clipboard.writeText(value);notify('邀请信息已复制。','success')}catch{notify('复制失败，请手动复制。','error')}}
+  if(!promotion&&loadError)return <PageLoadError title="邀请权益加载失败" message={loadError} retry={load}/>
   if(!promotion)return <main className="page-shell wrap"><div className="center-loading"><LoaderCircle className="spin"/> 正在读取邀请权益…</div></main>
   return <main className="page-shell wrap"><div className="page-title"><span className="eyebrow"><Zap size={14}/> 增长与分销</span><h1>邀请好友，一起创造好名字</h1><p>好友通过你的专属链接注册后，双方可获得活动奖励；好友成功购买套餐时会形成佣金记录。</p></div><section className="growth-hero"><div><span>我的推广码</span><strong>{promotion.code}</strong><button onClick={()=>copy(promotion.code)}>复制推广码</button></div><div><span>邀请链接</span><code>{promotion.invite_url}</code><button onClick={()=>copy(promotion.invite_url)}>复制链接</button></div></section><section className="growth-stats"><article><Users/><b>{promotion.invited_count}</b><span>成功邀请</span></article><article><Coins/><b>{promotion.reward_credits}</b><span>奖励次数</span></article><article><Crown/><b>¥{Number(promotion.commission_available).toFixed(2)}</b><span>可用佣金记录</span></article></section><section className="expert-columns"><div className="account-card"><h2>邀请好友</h2><div className="growth-list">{referrals.map((r)=><article key={r.id}><UserRound/><div><b>{r.username}</b><small>{new Date(r.created_at).toLocaleString()}</small></div></article>)}</div>{!referrals.length&&<p className="muted-copy">还没有好友通过你的推广码注册。</p>}</div><div className="account-card"><h2>次数奖励</h2><div className="growth-list">{rewards.map((r)=><article key={r.id}><Coins/><div><b>+{r.credit_count} 次</b><small>{r.beneficiary_type==='inviter'?'邀请好友奖励':'受邀注册奖励'} · {new Date(r.created_at).toLocaleString()}</small></div></article>)}</div></div></section><section className="account-card growth-commission"><h2>佣金记录</h2>{commissions.map((c)=><article key={c.id}><span className={`knowledge-status ${c.status==='available'?'completed':'failed'}`}>{c.status==='available'?'可结算':'已冲销'}</span><div><b>{c.invitee_name} · {c.order_no}</b><small>订单 ¥{Number(c.order_amount).toFixed(2)} · 比例 {(Number(c.commission_rate)*100).toFixed(1)}%</small></div><strong>¥{Number(c.commission_amount).toFixed(2)}</strong></article>)}</section><p className="growth-note">佣金仅形成平台内部核算记录，实际提现与税务结算将在合规结算能力接入后开放；退款订单会自动冲销对应佣金。</p></main>
 }
@@ -750,7 +760,7 @@ function App() {
     if (route === 'admin-community' && hasPermission(session?.user,'community.moderate')) return <AdminCommunityPage {...common}/>
     if (route === 'admin-developers' && hasPermission(session?.user,'developers.manage')) return <AdminDevelopersPage {...common}/>
     if (route === 'admin-growth' && hasPermission(session?.user,'growth.manage')) return <AdminGrowthPage {...common}/>
-    if (route === 'expert-workspace') return <ExpertWorkspacePage {...common}/>
+    if (route === 'expert-workspace' && hasPermission(session?.user,'expert.work')) return <ExpertWorkspacePage {...common}/>
     if (route === 'admin-credits' && hasPermission(session?.user,'credits.manage')) return <AdminCreditsPage {...common}/>
     if (route === 'admin-packages' && hasPermission(session?.user,'packages.manage')) return <AdminPackagesPage {...common}/>
     if (route === 'admin-orders' && hasPermission(session?.user,'orders.manage')) return <AdminOrdersPage {...common}/>
@@ -759,6 +769,8 @@ function App() {
     if (route === 'admin-validations' && hasPermission(session?.user,'validations.manage')) return <AdminValidationsPage {...common}/>
     if (route === 'admin-brand-assets' && hasPermission(session?.user,'brand_assets.manage')) return <AdminBrandAssetsPage {...common}/>
     if (route === 'admin-reports' && hasPermission(session?.user,'reports.manage')) return <AdminReportsPage {...common}/>
+    if (route.startsWith('admin-')) return <AccessDeniedPage area="运营后台" go={go}/>
+    if (route === 'expert-workspace') return <AccessDeniedPage area="专家工作台" go={go}/>
     return <Home go={go}/>
   }, [route, session, preset])
   if (authChecking) return <div className="session-check"><div className="brand"><span className="seal">念</span><span>一念 AI</span></div><LoaderCircle className="spin"/><p>正在验证登录状态…</p></div>
