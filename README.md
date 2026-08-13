@@ -267,6 +267,8 @@ npm run dev
 
 浏览器访问 `http://127.0.0.1:5173`。后端接口文档位于 `http://127.0.0.1:8000/docs`。
 
+移动端另有独立 Vue 3 uni-app 工程 `mobile-uniapp`，可用 HBuilderX 运行到 H5、Android、iOS 或小程序。详细使用方式见 `mobile-uniapp/README.md`。
+
 首次部署请继续完成下面的完整初始化步骤。
 
 ### 1. 克隆项目

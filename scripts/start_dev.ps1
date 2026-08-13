@@ -128,7 +128,7 @@ try {
     Write-Host '[4/4] Starting application processes...' -ForegroundColor Cyan
     $quotedRoot = '"' + $rootDir + '"'
     $quotedPython = '"' + $pythonExe + '"'
-    Start-AppWindow 'AI Name - FastAPI Backend' "cd /d $quotedRoot && $quotedPython run_server.py --reload" 8000
+    Start-AppWindow 'AI Name - FastAPI Backend' "cd /d $quotedRoot && $quotedPython run_server.py --host 0.0.0.0 --reload" 8000
 
     $existingWorker = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'rag_worker\.py' }
     if ($existingWorker) {
