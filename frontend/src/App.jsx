@@ -196,7 +196,7 @@ function ManagedKnowledgePage({ session, openAuth, notify }) {
   const [file, setFile] = useState(null), [dragging, setDragging] = useState(false), [uploading, setUploading] = useState(false)
   const [files, setFiles] = useState([]), [loading, setLoading] = useState(true), [busy, setBusy] = useState(null)
   const load = () => api.knowledgeFiles().then(setFiles).catch((e) => notify(e.message, 'error')).finally(() => setLoading(false))
-  useEffect(load, [])
+  useEffect(() => { load() }, [])
   useEffect(() => { if (!files.some((item) => ['queued','processing'].includes(item.status))) return; const timer = setInterval(load, 4000); return () => clearInterval(timer) }, [files.map((item) => item.status).join(',')])
   const choose = (candidate) => { if (candidate && (/\.(txt|pdf)$/i.test(candidate.name))) setFile(candidate); else notify('仅支持 TXT 或 PDF 文件。', 'error') }
   const upload = async () => { if (!session) return openAuth('login'); if (!file) return; setUploading(true); try { const data = await api.uploadKnowledge(file); setFiles((old) => [data.file, ...old]); setFile(null); notify(data.message, 'success') } catch(e) { notify(e.message, 'error'); load() } finally { setUploading(false) } }
@@ -292,7 +292,7 @@ function AccountPage({ session, notify, onSessionUpdate, go }) {
     setDashboardLoading(true)
     api.dashboard().then(setDashboard).catch((e) => notify(`工作台加载失败：${e.message}`, 'error')).finally(() => setDashboardLoading(false))
   }
-  useEffect(load, [])
+  useEffect(() => { load() }, [])
   const saveProfile = async (e) => { e.preventDefault(); setSaving(true); try { const data = await api.updateProfile({ username: username.trim() }); setProfile(data); onSessionUpdate(data); notify('个人资料已更新。', 'success') } catch(e) { notify(e.message, 'error') } finally { setSaving(false) } }
   const uploadAvatar = async (file) => { if (!file) return; setSaving(true); try { const data = await api.uploadAvatar(file); setProfile(data); onSessionUpdate(data); notify('头像已更新。', 'success') } catch(e) { notify(e.message, 'error') } finally { setSaving(false) } }
   const changePassword = async (e) => { e.preventDefault(); setSaving(true); try { const data = await api.changePassword(passwords); notify(data.message, 'success'); api.saveSession(null) } catch(e) { notify(e.message, 'error') } finally { setSaving(false) } }
@@ -359,7 +359,7 @@ function AdminUsersPage({ notify, session }) {
   const [users, setUsers] = useState([]), [roles, setRoles] = useState([]), [loading, setLoading] = useState(true), [busy, setBusy] = useState(null)
   const canEditRoles=hasPermission(session?.user,'users.roles')&&hasPermission(session?.user,'roles.manage'), canFreeze=hasPermission(session?.user,'users.freeze')
   const load = () => Promise.all([api.adminUsers(), canEditRoles ? api.adminRoles() : Promise.resolve([])]).then(([items, roleItems]) => { setUsers(items); setRoles(roleItems) }).catch((e) => notify(e.message, 'error')).finally(() => setLoading(false))
-  useEffect(load, [])
+  useEffect(() => { load() }, [])
   const toggle = async (user) => { setBusy(user.id); try { const next = await api.adminUpdateUserStatus(user.id, user.status === 'active' ? 'frozen' : 'active'); setUsers((old) => old.map((item) => item.id === user.id ? next : item)); notify(next.status === 'active' ? '用户已解冻。' : '用户已冻结。', 'success') } catch(e) { notify(e.message, 'error') } finally { setBusy(null) } }
   const setUserRoles = async (user, selected) => { if (!selected.length) return notify('用户至少需要保留一个角色。', 'error'); setBusy(user.id); try { const next = await api.adminUpdateUserRoles(user.id, selected); setUsers((old) => old.map((item) => item.id === user.id ? next : item)); notify('用户角色已更新，原登录会话已失效。', 'success') } catch(e) { notify(e.message, 'error') } finally { setBusy(null) } }
   const switchRole = (user, code) => { const selected = user.roles.includes(code) ? user.roles.filter((value) => value !== code) : [...user.roles, code]; setUserRoles(user, selected) }
@@ -370,7 +370,7 @@ function AdminSecurityPage({ notify, session }) {
   const [roles,setRoles]=useState([]),[permissions,setPermissions]=useState([]),[logs,setLogs]=useState([]),[busy,setBusy]=useState(''),[draft,setDraft]=useState({code:'',name:'',description:''})
   const canManage=hasPermission(session?.user,'roles.manage'), canAudit=hasPermission(session?.user,'audit.read')
   const load=()=>Promise.all([canManage?api.adminRoles():Promise.resolve([]),canManage?api.adminPermissions():Promise.resolve([]),canAudit?api.adminAuditLogs():Promise.resolve([])]).then(([r,p,l])=>{setRoles(r);setPermissions(p);setLogs(l)}).catch((e)=>notify(e.message,'error'))
-  useEffect(load,[])
+  useEffect(() => { load() },[])
   const create=async(e)=>{e.preventDefault();setBusy('create');try{await api.adminCreateRole({...draft,permissions:[]});setDraft({code:'',name:'',description:''});await load();notify('自定义角色已创建。','success')}catch(e){notify(e.message,'error')}finally{setBusy('')}}
   const switchPermission=async(role,code)=>{const next=role.permissions.includes(code)?role.permissions.filter((value)=>value!==code):[...role.permissions,code];setBusy(role.code);try{await api.adminUpdateRolePermissions(role.code,next);await load();notify('角色权限已更新。','success')}catch(e){notify(e.message,'error')}finally{setBusy('')}}
   return <main className="page-shell wrap"><div className="page-title"><span className="eyebrow"><ShieldCheck size={14}/> 运营后台</span><h1>角色权限与审计日志</h1><p>创建业务角色、配置最小权限，并追溯后台敏感操作。</p></div><section className="security-admin-layout">{canManage&&<div><form className="account-card security-role-create" onSubmit={create}><h2>创建自定义角色</h2><div className="field-row"><input required pattern="[a-z][a-z0-9_-]+" minLength="2" maxLength="50" placeholder="角色代码，如 operator" value={draft.code} onChange={(e)=>setDraft({...draft,code:e.target.value})}/><input required minLength="2" placeholder="角色名称" value={draft.name} onChange={(e)=>setDraft({...draft,name:e.target.value})}/></div><input maxLength="255" placeholder="角色说明" value={draft.description} onChange={(e)=>setDraft({...draft,description:e.target.value})}/><button className="red-button" disabled={busy==='create'}>创建角色</button></form><div className="security-role-list">{roles.map((role)=><article className="account-card" key={role.code}><div><h3>{role.name} <code>{role.code}</code></h3><p>{role.description||'暂无说明'} · {role.is_system?'系统角色（不可修改）':'自定义角色'}</p></div><div className="permission-grid">{permissions.map((permission)=><label title={permission.description} key={permission.code}><input type="checkbox" checked={role.permissions.includes(permission.code)} disabled={role.is_system||busy===role.code} onChange={()=>switchPermission(role,permission.code)}/><span>{permission.name}</span><small>{permission.code}</small></label>)}</div></article>)}</div></div>}{canAudit&&<aside className="account-card audit-panel"><h2>最近审计日志</h2>{logs.map((log)=><article key={log.id}><span>{log.action}</span><b>{log.target_type} · {log.target_id||'—'}</b><small>管理员 #{log.admin_user_id} · {log.ip_address} · {new Date(log.created_at).toLocaleString()}</small><code>{log.detail||'{}'}</code></article>)}</aside>}</section></main>
@@ -389,7 +389,7 @@ function ExpertsPage({ session, notify, go }) {
   const [selected, setSelected] = useState(null), [projectId, setProjectId] = useState(''), [requirement, setRequirement] = useState(''), [reviewing, setReviewing] = useState(null), [rating, setRating] = useState(5), [comment, setComment] = useState('')
   const [application, setApplication] = useState({ display_name:'', title:'', specialties:'', bio:'', experience_years:0, portfolio:'' })
   const load = () => Promise.all([api.expertPackages(), api.expertProfile(), api.expertCustomerOrders(), api.projects()]).then(([p,pr,o,ps]) => { setPackages(p); setProfile(pr); setOrders(o); setProjects(ps) }).catch((e) => notify(e.message,'error')).finally(() => setLoading(false))
-  useEffect(load, [])
+  useEffect(() => { load() }, [])
   const apply = async (e) => { e.preventDefault(); try { const next = await api.applyExpert({...application,experience_years:Number(application.experience_years)}); setProfile(next); notify('专家申请已提交，等待平台审核。','success') } catch(e){ notify(e.message,'error') } }
   const order = async (e) => { e.preventDefault(); try { const item = await api.createExpertOrder({ package_id:selected.id, project_id:projectId?Number(projectId):null, requirement, client_request_id:`expert:${crypto.randomUUID()}` }); setOrders((old)=>[item,...old]); setSelected(null); setRequirement(''); notify('精批订单已提交，等待专家接单。','success') } catch(e){ notify(e.message,'error') } }
   const review = async (e) => { e.preventDefault(); try { const item=await api.reviewExpertOrder(reviewing.id,{rating:Number(rating),content:comment}); setOrders((old)=>old.map((v)=>v.id===item.id?item:v)); setReviewing(null); setComment(''); notify('评价已提交，订单完成。','success') } catch(e){ notify(e.message,'error') } }
@@ -400,7 +400,7 @@ function ExpertsPage({ session, notify, go }) {
 function ExpertWorkspacePage({ notify }) {
   const [packages,setPackages]=useState([]),[orders,setOrders]=useState([]),[settlements,setSettlements]=useState([]),[draft,setDraft]=useState({name:'',description:'',price:'',delivery_days:7,revision_count:1}),[delivery,setDelivery]=useState(null)
   const load=()=>Promise.all([api.ownExpertPackages(),api.expertWorkOrders(),api.expertSettlements()]).then(([p,o,s])=>{setPackages(p);setOrders(o);setSettlements(s)}).catch((e)=>notify(e.message,'error'))
-  useEffect(load,[])
+  useEffect(() => { load() },[])
   const create=async(e)=>{e.preventDefault();try{await api.createExpertPackage({...draft,price:Number(draft.price),delivery_days:Number(draft.delivery_days),revision_count:Number(draft.revision_count)});setDraft({name:'',description:'',price:'',delivery_days:7,revision_count:1});await load();notify('专家套餐已发布。','success')}catch(e){notify(e.message,'error')}}
   const accept=async(id)=>{try{await api.acceptExpertOrder(id);await load()}catch(e){notify(e.message,'error')}}
   const deliver=async(e)=>{e.preventDefault();try{await api.deliverExpertOrder(delivery.id,{title:delivery.title,content:delivery.content,attachment_url:delivery.attachment_url||''});setDelivery(null);await load();notify('专家交付报告已提交。','success')}catch(e){notify(e.message,'error')}}
@@ -410,7 +410,7 @@ function ExpertWorkspacePage({ notify }) {
 function AdminExpertsPage({ notify }) {
   const [applications,setApplications]=useState([]),[orders,setOrders]=useState([]),[settlements,setSettlements]=useState([]),[status,setStatus]=useState('')
   const load=()=>Promise.all([api.adminExpertApplications(status),api.adminExpertOrders(),api.adminExpertSettlements()]).then(([a,o,s])=>{setApplications(a);setOrders(o);setSettlements(s)}).catch((e)=>notify(e.message,'error'))
-  useEffect(load,[status])
+  useEffect(() => { load() },[status])
   const decide=async(id,next)=>{try{await api.adminReviewExpert(id,{status:next,review_note:next==='approved'?'资质审核通过':'资料暂不符合平台要求'});await load();notify('专家申请已处理。','success')}catch(e){notify(e.message,'error')}}
   const settle=async(id)=>{try{await api.adminSettleExpert(id);await load();notify('结算已确认。','success')}catch(e){notify(e.message,'error')}}
   return <main className="page-shell wrap"><div className="page-title"><span className="eyebrow"><Star size={14}/> 运营后台</span><h1>专家服务管理</h1><p>审核专家资质、查看精批订单并确认专家结算。</p></div><div className="project-filters">{[['','全部申请'],['pending','待审核'],['approved','已通过'],['rejected','未通过']].map(([k,l])=><button key={k} className={status===k?'active':''} onClick={()=>setStatus(k)}>{l}</button>)}</div><section className="expert-admin-list">{applications.map((a)=><article className="account-card" key={a.id}><span className={`knowledge-status ${a.status==='approved'?'completed':a.status==='rejected'?'failed':'queued'}`}>{a.status}</span><div><h3>{a.display_name} · {a.title}</h3><p>{a.username} · {a.user_email}</p><small>{a.experience_years} 年经验 · {a.specialties}</small></div><p>{a.bio}</p>{a.status==='pending'&&<div className="order-actions"><button className="red-button" onClick={()=>decide(a.id,'approved')}>通过</button><button className="outline-button" onClick={()=>decide(a.id,'rejected')}>拒绝</button></div>}</article>)}</section><section className="expert-columns"><div className="account-card"><h2>全部精批订单</h2><div className="expert-order-list">{orders.map((o)=><article key={o.id}><span>{expertOrderStatus[o.status]}</span><b>{o.order_no}</b><p>{o.customer_name} → {o.expert_name} · ¥{Number(o.amount).toFixed(2)}</p></article>)}</div></div><div className="account-card"><h2>专家结算</h2><div className="expert-order-list">{settlements.map((s)=><article key={s.id}><span>{s.status==='settled'?'已结算':'待结算'}</span><b>{s.expert_name} · ¥{Number(s.net_amount).toFixed(2)}</b><p>{s.order_no} · 平台服务费 ¥{Number(s.platform_fee).toFixed(2)}</p>{s.status==='pending'&&<button className="red-button" onClick={()=>settle(s.id)}>确认结算</button>}</article>)}</div></div></section></main>
@@ -419,7 +419,7 @@ function AdminExpertsPage({ notify }) {
 function CommunityPage({ notify, go }) {
   const [polls,setPolls]=useState([]),[filter,setFilter]=useState(''),[loading,setLoading]=useState(true)
   const load=()=>api.communityPolls(filter).then(setPolls).catch((e)=>notify(e.message,'error')).finally(()=>setLoading(false))
-  useEffect(load,[filter])
+  useEffect(() => { load() },[filter])
   return <main className="page-shell wrap"><div className="page-title"><span className="eyebrow"><Vote size={14}/> 社区众包</span><h1>让更多人，帮你选出好名字</h1><p>浏览真实命名候选，投出你的判断，也可以发布自己的项目邀请社区参与。</p></div><div className="community-toolbar"><div className="project-filters"><button className={!filter?'active':''} onClick={()=>setFilter('')}>全部投票</button><button className={filter==='featured=true'?'active':''} onClick={()=>setFilter('featured=true')}>社区精选</button><button className={filter==='mine=true'?'active':''} onClick={()=>setFilter('mine=true')}>我的发布</button></div><button className="red-button" onClick={()=>go('community-publish')}>发布命名投票</button></div>{loading?<div className="center-loading"><LoaderCircle className="spin"/> 正在读取社区投票…</div>:<section className="community-grid">{polls.map((poll)=><button className="account-card community-poll-card" key={poll.id} onClick={()=>go('community-detail',poll.id)}>{poll.is_featured&&<span className="featured-tag"><Star size={12}/> 社区精选</span>}<span className={`knowledge-status ${poll.status==='open'?'completed':'queued'}`}>{poll.status==='open'?'投票中':'已结束'}</span><h2>{poll.title}</h2><p>{poll.description||'发布者正在邀请大家从这些候选名称中做出选择。'}</p><div className="community-name-preview">{poll.candidates.slice(0,4).map((c)=><span key={c.id}>{c.name}</span>)}</div><footer><span>{poll.publisher} · {poll.category}</span><b>{poll.vote_count} 票 · {poll.comment_count} 条讨论</b></footer></button>)}</section>}{!loading&&!polls.length&&<div className="empty-state standalone"><Vote/><h3>还没有符合条件的投票</h3><p>从你的命名项目发布第一场社区共创。</p></div>}</main>
 }
 
@@ -435,7 +435,7 @@ function CommunityPublishPage({ notify, go }) {
 function CommunityDetailPage({ notify, pollId, go }) {
   const [poll,setPoll]=useState(null),[comment,setComment]=useState('')
   const load=()=>api.communityPoll(pollId).then(setPoll).catch((e)=>{notify(e.message,'error');go('community')})
-  useEffect(load,[pollId])
+  useEffect(() => { load() },[pollId])
   const vote=async(id)=>{try{setPoll(await api.voteCommunityPoll(poll.id,id));notify('你的选择已计入投票。','success')}catch(e){notify(e.message,'error')}}
   const addComment=async(e)=>{e.preventDefault();try{setPoll(await api.commentCommunityPoll(poll.id,comment));setComment('')}catch(e){notify(e.message,'error')}}
   const report=async(type,id)=>{const reason=prompt('请简要说明举报原因（至少 5 个字）');if(!reason)return;try{await api.reportCommunityContent({target_type:type,target_id:id,reason});notify('举报已提交，运营人员会尽快处理。','success')}catch(e){notify(e.message,'error')}}
@@ -447,7 +447,7 @@ function CommunityDetailPage({ notify, pollId, go }) {
 function AdminCommunityPage({ notify }) {
   const [reports,setReports]=useState([]),[polls,setPolls]=useState([]),[status,setStatus]=useState('pending')
   const load=()=>Promise.all([api.adminCommunityReports(status),api.communityPolls()]).then(([r,p])=>{setReports(r);setPolls(p)}).catch((e)=>notify(e.message,'error'))
-  useEffect(load,[status])
+  useEffect(() => { load() },[status])
   const moderate=async(id,action)=>{try{await api.moderateCommunityReport(id,{action,resolution:action==='hide'?'核查后确认违规，内容已隐藏':'核查后未发现违规，举报已驳回'});await load();notify('举报已处理。','success')}catch(e){notify(e.message,'error')}}
   const feature=async(poll)=>{try{await api.featureCommunityPoll(poll.id,!poll.is_featured);await load()}catch(e){notify(e.message,'error')}}
   return <main className="page-shell wrap"><div className="page-title"><span className="eyebrow"><ShieldCheck size={14}/> 运营后台</span><h1>社区内容管理</h1><p>维护社区精选，核查用户举报并隐藏违规投票或评论。</p></div><section className="expert-columns"><div><h2>社区投票与精选</h2><div className="community-admin-polls">{polls.map((p)=><article className="account-card" key={p.id}><div><b>{p.title}</b><p>{p.publisher} · {p.vote_count} 票 · {p.comment_count} 评论</p></div><button className={p.is_featured?'outline-button':'red-button'} onClick={()=>feature(p)}>{p.is_featured?'取消精选':'设为精选'}</button></article>)}</div></div><div><h2>内容举报</h2><div className="project-filters">{[['pending','待处理'],['resolved','已处理'],['dismissed','已驳回']].map(([k,l])=><button className={status===k?'active':''} onClick={()=>setStatus(k)} key={k}>{l}</button>)}</div><div className="community-report-list">{reports.map((r)=><article className="account-card" key={r.id}><span>{r.target_type==='poll'?'投票':'评论'} #{r.target_id}</span><h3>{r.reason}</h3><p>举报人：{r.reporter}</p>{r.status==='pending'?<div className="order-actions"><button className="red-button" onClick={()=>moderate(r.id,'hide')}>确认违规并隐藏</button><button className="outline-button" onClick={()=>moderate(r.id,'dismiss')}>驳回举报</button></div>:<small>{r.resolution}</small>}</article>)}</div></div></section></main>
@@ -457,7 +457,7 @@ function DevelopersPage({ notify }) {
   const [account,setAccount]=useState(undefined),[keys,setKeys]=useState([]),[plans,setPlans]=useState([]),[subs,setSubs]=useState([]),[usage,setUsage]=useState([]),[summary,setSummary]=useState(null),[loadError,setLoadError]=useState(''),[revealed,setRevealed]=useState(null),[keyName,setKeyName]=useState('生产环境 Key')
   const [form,setForm]=useState({company_name:'',contact_name:'',use_case:''})
   const load=()=>{setLoadError('');return Promise.all([api.developerAccount(),api.apiPlans(),api.apiSubscriptions(),api.apiUsage(),api.apiUsageSummary()]).then(async([a,p,s,u,m])=>{setAccount(a);setPlans(p);setSubs(s);setUsage(u);setSummary(m);setKeys(a?await api.developerKeys():[])}).catch((e)=>{setLoadError(e.message);notify(e.message,'error')})}
-  useEffect(load,[])
+  useEffect(() => { load() },[])
   const createAccount=async(e)=>{e.preventDefault();try{await api.createDeveloperAccount(form);await load();notify('开发者账号已开通。','success')}catch(e){notify(e.message,'error')}}
   const createKey=async(e)=>{e.preventDefault();try{const item=await api.createDeveloperKey(keyName);setRevealed(item.api_key);await load()}catch(e){notify(e.message,'error')}}
   const revoke=async(id)=>{if(!confirm('撤销后使用该 Key 的系统会立即无法调用，确定吗？'))return;try{await api.revokeDeveloperKey(id);await load()}catch(e){notify(e.message,'error')}}
@@ -471,7 +471,7 @@ function DevelopersPage({ notify }) {
 function AdminDevelopersPage({ notify }) {
   const [developers,setDevelopers]=useState([]),[plans,setPlans]=useState([]),[draft,setDraft]=useState({name:'',description:'',price:'',quota_calls:1000,validity_days:365}),[grant,setGrant]=useState({})
   const load=()=>Promise.all([api.adminDevelopers(),api.apiPlans()]).then(([d,p])=>{setDevelopers(d);setPlans(p)}).catch((e)=>notify(e.message,'error'))
-  useEffect(load,[])
+  useEffect(() => { load() },[])
   const create=async(e)=>{e.preventDefault();try{await api.createApiPlan({...draft,price:Number(draft.price),quota_calls:Number(draft.quota_calls),validity_days:Number(draft.validity_days)});setDraft({name:'',description:'',price:'',quota_calls:1000,validity_days:365});await load();notify('API 套餐已创建。','success')}catch(e){notify(e.message,'error')}}
   const grantPlan=async(id)=>{if(!grant[id])return;try{await api.grantApiPlan(id,Number(grant[id]));notify('API 额度已授予。','success')}catch(e){notify(e.message,'error')}}
   const toggle=async(item)=>{try{await api.setDeveloperStatus(item.id,item.status==='active'?'suspended':'active');await load();notify(item.status==='active'?'开发者账号已停用，所有有效 Key 已撤销。':'开发者账号已恢复。','success')}catch(e){notify(e.message,'error')}}
@@ -481,7 +481,7 @@ function AdminDevelopersPage({ notify }) {
 function GrowthPage({ notify }) {
   const [promotion,setPromotion]=useState(null),[referrals,setReferrals]=useState([]),[rewards,setRewards]=useState([]),[commissions,setCommissions]=useState([]),[loadError,setLoadError]=useState('')
   const load=()=>{setLoadError('');return Promise.all([api.growthPromotion(),api.growthReferrals(),api.growthRewards(),api.growthCommissions()]).then(([p,r,w,c])=>{setPromotion(p);setReferrals(r);setRewards(w);setCommissions(c)}).catch((e)=>{setLoadError(e.message);notify(e.message,'error')})}
-  useEffect(load,[])
+  useEffect(() => { load() },[])
   const copy=async(value)=>{try{await navigator.clipboard.writeText(value);notify('邀请信息已复制。','success')}catch{notify('复制失败，请手动复制。','error')}}
   if(!promotion&&loadError)return <PageLoadError title="邀请权益加载失败" message={loadError} retry={load}/>
   if(!promotion)return <main className="page-shell wrap"><div className="center-loading"><LoaderCircle className="spin"/> 正在读取邀请权益…</div></main>
@@ -491,7 +491,7 @@ function GrowthPage({ notify }) {
 function AdminGrowthPage({ notify }) {
   const [campaigns,setCampaigns]=useState([]),[commissions,setCommissions]=useState([]),[draft,setDraft]=useState({name:'',description:'',inviter_reward:1,invitee_reward:1,commission_rate:0.1,starts_at:'',ends_at:''})
   const load=()=>Promise.all([api.growthCampaigns(),api.adminGrowthCommissions()]).then(([a,c])=>{setCampaigns(a);setCommissions(c)}).catch((e)=>notify(e.message,'error'))
-  useEffect(load,[])
+  useEffect(() => { load() },[])
   const create=async(e)=>{e.preventDefault();try{await api.createGrowthCampaign({...draft,inviter_reward:Number(draft.inviter_reward),invitee_reward:Number(draft.invitee_reward),commission_rate:Number(draft.commission_rate),starts_at:new Date(draft.starts_at).toISOString(),ends_at:new Date(draft.ends_at).toISOString()});await load();notify('增长活动已创建。','success')}catch(e){notify(e.message,'error')}}
   const toggle=async(c)=>{try{await api.setGrowthCampaignStatus(c.id,!c.is_active);await load()}catch(e){notify(e.message,'error')}}
   return <main className="page-shell wrap"><div className="page-title"><span className="eyebrow"><Zap size={14}/> 运营后台</span><h1>增长活动管理</h1><p>配置邀请双方奖励与一层推广佣金，查看支付和退款产生的佣金状态。</p></div><section className="expert-columns"><form className="account-card" onSubmit={create}><h2>创建邀请活动</h2><input required placeholder="活动名称" value={draft.name} onChange={(e)=>setDraft({...draft,name:e.target.value})}/><textarea maxLength="500" placeholder="活动说明" value={draft.description} onChange={(e)=>setDraft({...draft,description:e.target.value})}/><div className="field-row"><input required type="number" min="0" placeholder="邀请人奖励次数" value={draft.inviter_reward} onChange={(e)=>setDraft({...draft,inviter_reward:e.target.value})}/><input required type="number" min="0" placeholder="受邀人奖励次数" value={draft.invitee_reward} onChange={(e)=>setDraft({...draft,invitee_reward:e.target.value})}/></div><input required type="number" min="0" max="0.5" step="0.0001" placeholder="佣金比例，如 0.1" value={draft.commission_rate} onChange={(e)=>setDraft({...draft,commission_rate:e.target.value})}/><div className="field-row"><input required type="datetime-local" value={draft.starts_at} onChange={(e)=>setDraft({...draft,starts_at:e.target.value})}/><input required type="datetime-local" value={draft.ends_at} onChange={(e)=>setDraft({...draft,ends_at:e.target.value})}/></div><button className="red-button">创建活动</button></form><section><h2>活动列表</h2><div className="growth-campaign-list">{campaigns.map((c)=><article className="account-card" key={c.id}><div><b>{c.name}</b><p>双方奖励 {c.inviter_reward}/{c.invitee_reward} 次 · 佣金 {(Number(c.commission_rate)*100).toFixed(1)}%</p><small>{new Date(c.starts_at).toLocaleString()} — {new Date(c.ends_at).toLocaleString()}</small></div><button className={c.is_active?'outline-button':'red-button'} onClick={()=>toggle(c)}>{c.is_active?'停用':'启用'}</button></article>)}</div></section></section><section className="account-card growth-commission"><h2>全平台佣金记录</h2>{commissions.map((c)=><article key={c.id}><span className={`knowledge-status ${c.status==='available'?'completed':'failed'}`}>{c.status}</span><div><b>{c.invitee_name} · {c.order_no}</b><small>订单 ¥{Number(c.order_amount).toFixed(2)} · {(Number(c.commission_rate)*100).toFixed(1)}%</small></div><strong>¥{Number(c.commission_amount).toFixed(2)}</strong></article>)}</section></main>
@@ -501,7 +501,7 @@ function AdminCreditsPage({ notify }) {
   const [accounts, setAccounts] = useState([]), [loading, setLoading] = useState(true), [saving, setSaving] = useState(null)
   const [forms, setForms] = useState({})
   const load = () => { setLoading(true); api.adminCreditAccounts().then(setAccounts).catch((e) => notify(e.message, 'error')).finally(() => setLoading(false)) }
-  useEffect(load, [])
+  useEffect(() => { load() }, [])
   const update = (id, key, value) => setForms((old) => ({ ...old, [id]: { change_count: '', remark: '', ...(old[id] || {}), [key]: value } }))
   const submit = async (account) => {
     const form = forms[account.user_id] || {}; const count = Number(form.change_count)
@@ -527,7 +527,7 @@ function AdminPackagesPage({ notify }) {
   const empty = { name: '', description: '', price: '', credit_count: '', is_active: true, sort_order: 0 }
   const [packages, setPackages] = useState([]), [draft, setDraft] = useState(empty), [loading, setLoading] = useState(true), [saving, setSaving] = useState(null)
   const load = () => { setLoading(true); api.adminPackages().then(setPackages).catch((e) => notify(e.message, 'error')).finally(() => setLoading(false)) }
-  useEffect(load, [])
+  useEffect(() => { load() }, [])
   const change = (id, key, value) => setPackages((old) => old.map((item) => item.id === id ? { ...item, [key]: value } : item))
   const create = async (e) => { e.preventDefault(); setSaving('create'); try { const item = await api.createPackage({ ...draft, price: Number(draft.price), credit_count: Number(draft.credit_count), sort_order: Number(draft.sort_order) }); setPackages((old) => [...old, item].sort((a,b) => a.sort_order-b.sort_order || a.id-b.id)); setDraft(empty); notify('套餐已创建。', 'success') } catch(e) { notify(e.message, 'error') } finally { setSaving(null) } }
   const save = async (item) => { setSaving(item.id); try { const next = await api.updatePackage(item.id, { name: item.name, description: item.description, price: Number(item.price), credit_count: Number(item.credit_count), sort_order: Number(item.sort_order) }); change(item.id, 'updated_at', next.updated_at); notify('套餐资料已保存。', 'success') } catch(e) { notify(e.message, 'error') } finally { setSaving(null) } }
@@ -543,7 +543,7 @@ const orderStatusText = { pending: '待支付', paid: '已支付', closed: '已�
 function OrdersPage({ notify }) {
   const [orders, setOrders] = useState([]), [loading, setLoading] = useState(true), [busy, setBusy] = useState(''), [detail, setDetail] = useState(null)
   const load = () => { setLoading(true); api.orders().then(setOrders).catch((e) => notify(e.message, 'error')).finally(() => setLoading(false)) }
-  useEffect(load, [])
+  useEffect(() => { load() }, [])
   const replace = (next) => setOrders((old) => old.map((item) => item.order_no === next.order_no ? next : item))
   const sync = async (item) => { setBusy(item.order_no); try { const next = await api.syncOrder(item.order_no); replace(next); notify('订单状态已同步。', 'success') } catch(e) { notify(e.message, 'error') } finally { setBusy('') } }
   const close = async (item) => { if (!confirm('确定关闭这个待支付订单吗？')) return; setBusy(item.order_no); try { const next = await api.closeOrder(item.order_no); replace(next); notify('订单已关闭。', 'success') } catch(e) { notify(e.message, 'error') } finally { setBusy('') } }
@@ -556,7 +556,7 @@ function OrdersPage({ notify }) {
 function AdminOrdersPage({ notify }) {
   const [orders, setOrders] = useState([]), [status, setStatus] = useState(''), [loading, setLoading] = useState(true), [busy, setBusy] = useState(''), [detail, setDetail] = useState(null)
   const load = () => { setLoading(true); api.adminOrders(status).then(setOrders).catch((e) => notify(e.message, 'error')).finally(() => setLoading(false)) }
-  useEffect(load, [status])
+  useEffect(() => { load() }, [status])
   const refund = async (item) => { const reason = prompt('请输入退款原因'); if (!reason?.trim()) return; if (!confirm(`确认退款 ¥${Number(item.amount).toFixed(2)} 并回收 ${item.credit_count} 次权益吗？`)) return; setBusy(item.order_no); try { const next = await api.refundOrder(item.order_no, { request_no: `refund:${crypto.randomUUID()}`, reason: reason.trim() }); setOrders((old) => old.map((value) => value.order_no === next.order_no ? { ...value, ...next } : value)); notify('退款已完成。', 'success') } catch(e) { notify(e.message, 'error') } finally { setBusy('') } }
   const close = async (item) => { if (!confirm('确定由管理员关闭此订单吗？')) return; setBusy(item.order_no); try { const next = await api.adminCloseOrder(item.order_no); setOrders((old) => old.map((value) => value.order_no === next.order_no ? { ...value, ...next } : value)); notify('订单已关闭。', 'success') } catch(e) { notify(e.message, 'error') } finally { setBusy('') } }
   const showDetail = async (item) => { setBusy(item.order_no); try { setDetail(await api.adminOrderDetail(item.order_no)) } catch(e) { notify(e.message, 'error') } finally { setBusy('') } }
@@ -566,7 +566,7 @@ function AdminOrdersPage({ notify }) {
 function AdminKnowledgePage({ notify }) {
   const [files, setFiles] = useState([]), [status, setStatus] = useState(''), [loading, setLoading] = useState(true), [busy, setBusy] = useState(null)
   const load = () => { setLoading(true); api.adminKnowledgeFiles(status).then(setFiles).catch((e) => notify(e.message, 'error')).finally(() => setLoading(false)) }
-  useEffect(load, [status])
+  useEffect(() => { load() }, [status])
   const retry = async (item) => { setBusy(item.id); try { const next = await api.adminReprocessKnowledge(item.id); setFiles((old) => old.map((v) => v.id === item.id ? { ...v, ...next } : v)); notify('文件已重新入队', 'success') } catch(e) { notify(e.message, 'error') } finally { setBusy(null) } }
   const remove = async (item) => { if (!confirm(`确定删除 ${item.user_email} 的“${item.original_name}”吗？`)) return; setBusy(item.id); try { await api.adminDeleteKnowledge(item.id); setFiles((old) => old.filter((v) => v.id !== item.id)); notify('文件已删除并记录审计日志', 'success') } catch(e) { notify(e.message, 'error') } finally { setBusy(null) } }
   return <main className="page-shell wrap"><div className="page-title"><span className="eyebrow"><BookOpen size={14}/> 运营后台</span><h1>知识库文件管理</h1><p>查看全站文件状态，重新处理失败任务并清理资料。</p></div><div className="project-filters">{[['','全部'],['queued','排队中'],['processing','处理中'],['completed','已完成'],['failed','失败']].map(([key,label]) => <button key={key} className={status === key ? 'active' : ''} onClick={() => setStatus(key)}>{label}</button>)}</div>{loading ? <div className="center-loading"><LoaderCircle className="spin"/> 正在读取…</div> : <div className="knowledge-file-list admin-knowledge-list">{files.map((item) => <article className="account-card" key={item.id}><FileText/><div><h3>{item.original_name}</h3><p>{item.username} · {item.user_email}</p><small>{(item.size_bytes / 1024).toFixed(1)} KB · 尝试 {item.attempt_count} 次</small>{item.error_message && <small>{item.error_message}</small>}</div><span className={`knowledge-status ${item.status}`}>{knowledgeStatusText[item.status] || item.status}</span><div className="order-actions">{['failed','completed'].includes(item.status) && <button className="outline-button" onClick={() => retry(item)} disabled={busy === item.id}>重新处理</button>}<button className="danger-link" onClick={() => remove(item)} disabled={busy === item.id}>删除</button></div></article>)}</div>}</main>
@@ -655,7 +655,7 @@ const taskStatusText = { queued: '排队中', running: '执行中', completed: '
 function TasksPage({ notify }) {
   const [tasks, setTasks] = useState([]), [loading, setLoading] = useState(true), [busy, setBusy] = useState(null)
   const load = () => api.tasks().then(setTasks).catch((e) => notify(e.message, 'error')).finally(() => setLoading(false))
-  useEffect(load, [])
+  useEffect(() => { load() }, [])
   useEffect(() => { if (!tasks.some((item) => ['queued','running'].includes(item.status))) return; const timer = setInterval(load, 3000); return () => clearInterval(timer) }, [tasks.map((item) => `${item.id}:${item.status}`).join(',')])
   const retry = async (item) => { setBusy(item.id); try { const next = await api.retryTask(item.id); setTasks((old) => old.map((v) => v.id === item.id ? next : v)); notify('任务已重新进入队列', 'success') } catch(e) { notify(e.message, 'error') } finally { setBusy(null) } }
   return <main className="page-shell wrap narrow"><div className="page-title"><span className="eyebrow"><RefreshCw size={14}/> 用户中心</span><h1>我的异步任务</h1><p>查看知识库解析等后台任务的执行进度、重试次数和失败原因。</p></div>{loading ? <div className="center-loading"><LoaderCircle className="spin"/> 正在读取任务…</div> : tasks.length ? <div className="task-list">{tasks.map((item) => <article className="account-card" key={item.id}><div><span className={`knowledge-status ${item.status}`}>{taskStatusText[item.status] || item.status}</span><h3>{item.task_type === 'knowledge.process' ? '知识库文件处理' : item.task_type}</h3><p>任务 ID：{item.id}</p><small>{new Date(item.created_at).toLocaleString()} · 第 {item.attempt_count}/{item.max_attempts} 次尝试</small>{item.error_message && <em>{item.error_message}</em>}</div><div className="task-progress"><span style={{ width: `${item.progress}%` }}/></div><b>{item.progress}%</b>{['failed','canceled'].includes(item.status) && <button className="outline-button" disabled={busy === item.id} onClick={() => retry(item)}>重新执行</button>}</article>)}</div> : <div className="empty-state standalone"><RefreshCw/><h3>暂无后台任务</h3><p>上传知识库资料后，任务会显示在这里。</p></div>}</main>
@@ -664,7 +664,7 @@ function TasksPage({ notify }) {
 function AdminTasksPage({ notify }) {
   const [tasks, setTasks] = useState([]), [status, setStatus] = useState(''), [loading, setLoading] = useState(true), [busy, setBusy] = useState(null)
   const load = () => { setLoading(true); api.adminTasks(status).then(setTasks).catch((e) => notify(e.message, 'error')).finally(() => setLoading(false)) }
-  useEffect(load, [status])
+  useEffect(() => { load() }, [status])
   const replace = (next) => setTasks((old) => old.map((v) => v.id === next.id ? { ...v, ...next } : v))
   const retry = async (item) => { setBusy(item.id); try { replace(await api.adminRetryTask(item.id)); notify('任务已重新入队并记录审计日志', 'success') } catch(e) { notify(e.message, 'error') } finally { setBusy(null) } }
   const cancel = async (item) => { if (!confirm('确定取消这个排队任务吗？')) return; setBusy(item.id); try { replace(await api.adminCancelTask(item.id)); notify('任务已取消', 'success') } catch(e) { notify(e.message, 'error') } finally { setBusy(null) } }
