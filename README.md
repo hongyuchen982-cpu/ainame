@@ -236,6 +236,20 @@ ai_name/
 
 如果数据库、Redis、RabbitMQ 和环境变量都已经准备好，本地开发只需打开两个终端：
 
+Windows 本机推荐直接双击项目根目录的 `start.bat`。它会检查并尝试启动
+MySQL、PostgreSQL、Redis 和 RabbitMQ Windows 服务，执行数据库迁移与记忆表初始化，
+然后分别打开 FastAPI、RAG Worker 和 React 三个运行窗口。基础服务作为 Windows 服务运行，
+不需要额外保留四个终端；前后端就绪后会自动打开浏览器。只检查环境而不启动应用可执行：
+
+```powershell
+.\start.bat --check
+```
+
+如果暂时不想自动打开浏览器，可以执行 `.\start.bat -NoBrowser`。
+
+如果 `.env` 没有设置 `RABBITMQ_URL`，脚本在本次本地启动中使用
+`amqp://guest:guest@127.0.0.1:5672/`；修改过 RabbitMQ 账号时必须在 `.env` 明确配置。
+
 终端 1，启动 FastAPI 后端：
 
 ```powershell
