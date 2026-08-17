@@ -292,7 +292,86 @@ VITE_API_BASE=http://192.168.31.211:8000
 
 若打包出现 `There is insufficient memory for the Java Runtime Environment` 或错误码 `1455`，请关闭占用内存的软件，并在 Windows“高级系统设置 → 性能 → 高级 → 虚拟内存”中启用系统管理大小，重启电脑后重新打包。正式上线时必须将局域网 HTTP 地址替换为可公网访问的 HTTPS API 域名。
 
-首次部署请继续完成下面的完整初始化步骤。
+## Docker Compose 本地最小部署
+
+项目根目录已经提供 `Dockerfile`、`docker-compose.yml`、`nginx.conf` 和针对 Python 3.13 锁定的
+`requirements.txt`。当前 Compose 保持最小部署，只启动以下服务：
+
+- `web`：FastAPI / Uvicorn 后端
+- `db`：MySQL 8.0 业务数据库
+- `postgres_db`：PostgreSQL 15，保存 LangGraph Checkpoint
+- `redis`：验证码、缓存和分布式锁
+- `nginx`：将本机 80 端口反向代理到 `web:8000`
+
+### 1. 准备 Docker 环境变量
+
+以现有 `.env` 为基础保留真实可用的 DeepSeek、JWT、邮件和支付宝配置，只修改 Docker 容器间连接地址。
+不要把 `.env` 提交到 Git。至少确认以下配置存在：
+
+```env
+MYSQL_ROOT_PASSWORD=replace_with_your_mysql_root_password
+POSTGRES_PASSWORD=replace_with_your_postgres_password
+
+DB_URI=mysql+aiomysql://root:${MYSQL_ROOT_PASSWORD}@db:3306/ainame?charset=utf8mb4
+LANGGRAPH_DB_URI=postgresql://postgres:${POSTGRES_PASSWORD}@postgres_db:5432/ai_name
+REDIS_URL=redis://redis:6379/0
+
+# 本机开发地址；正式上线后替换为 HTTPS 域名
+FRONTEND_BASE_URL=http://127.0.0.1:5173
+APP_BASE_URL=http://127.0.0.1:8000
+ALIPAY_NOTIFY_URL=http://127.0.0.1:8000/pay/alipay_notify
+ALIPAY_RETURN_URL=http://127.0.0.1:8000/pay/success
+ALIPAY_DEBUG=true
+```
+
+代码读取的支付宝公钥变量名是 `ALIPAY_PUBLIC_KEY`，不是
+`ALIPAY_ALIPAY_PUBLIC_KEY`。`ALIPAY_DEBUG=true` 仅适用于沙箱；切换正式网关时必须改为 `false`。
+支付宝服务器无法回调 `127.0.0.1`，因此本机配置只能用于开发；完整异步通知测试需要公网 HTTPS 地址或安全的临时隧道。
+
+### 2. 构建并启动
+
+```powershell
+docker compose config -q
+docker compose up -d --build
+docker compose ps
+```
+
+`docker compose config -q` 应无输出并以状态码 0 结束。启动后可访问：
+
+- Nginx / API：`http://127.0.0.1/`
+- Swagger UI：`http://127.0.0.1/docs`
+- 直接访问后端（仅容器端口映射存在时）：`http://127.0.0.1:8000/docs`
+
+当前 `web` 服务没有发布宿主机 8000 端口，因此以现有 Compose 配置为准，应通过 Nginx 的 80 端口访问。
+
+### 3. 初始化数据库
+
+容器健康后执行 MySQL 迁移和 PostgreSQL Checkpoint 初始化：
+
+```powershell
+docker compose exec web alembic upgrade head
+docker compose exec web python init_pg_memory.py
+```
+
+### 4. 查看日志与停止服务
+
+```powershell
+docker compose logs -f web
+docker compose down
+```
+
+`docker compose down` 不会删除命名卷中的数据库数据。只有明确需要清空本地数据时才使用
+`docker compose down -v`。
+
+### 当前最小部署限制
+
+当前 Compose 有意不包含 RabbitMQ、`rag_worker` 和 Ollama，因此知识库上传后的异步解析、向量化与 RAG
+检索暂不可用；其他不依赖这些服务的后端功能仍可继续开发。React 前端也未打包进 Nginx，需继续通过
+`npm run dev` 在 `http://127.0.0.1:5173` 启动。
+
+## 手动完整初始化
+
+不使用 Docker Compose 时，首次部署请继续完成下面的完整初始化步骤。
 
 ### 1. 克隆项目
 
@@ -316,7 +395,7 @@ Windows PowerShell 激活：
 ### 3. 安装依赖
 
 ```bash
-pip install fastapi uvicorn sqlalchemy aiomysql alembic redis fastapi-mail aiosmtplib pwdlib pyjwt python-dotenv pydantic email-validator langchain langchain-deepseek langgraph langgraph-checkpoint-postgres "psycopg[binary,pool]" langchain-chroma langchain-community langchain-ollama chromadb pypdf reportlab pdfplumber python-multipart python-alipay-sdk aio-pika httpx
+python -m pip install -r requirements.txt
 ```
 
 ### 4. 创建 MySQL 数据库
@@ -1174,7 +1253,7 @@ Windows 下不要直接运行 `uvicorn main:app`。Python 默认的 Proactor loo
 ## 后续可扩展方向
 
 - 将上传文件和向量数据库迁移到对象存储与独立向量服务
-- 增加 Docker / Docker Compose 部署
+- 扩展 Compose，加入 RabbitMQ、RAG Worker、Ollama 与前端静态资源构建
 
 ## 阶段开发与自动检查
 
