@@ -231,7 +231,7 @@ ai_name/
 - PostgreSQL 14+（保存 LangGraph 多轮记忆）
 - RabbitMQ 3.x（分发知识库解析任务）
 - Redis 5.x+
-- Ollama，并已下载 `qwen3-embedding:4b` 模型
+- Ollama，并已下载 `nomic-embed-text:latest` 模型
 - 可用的 SMTP 邮箱账号
 - DeepSeek API Key
 - 阿里云百炼 API Key（如需生成 Logo）
@@ -239,18 +239,26 @@ ai_name/
 
 ## 快速开始
 
-如果数据库、Redis、RabbitMQ 和环境变量都已经准备好，本地开发只需打开两个终端：
-
-Windows 本机推荐直接双击项目根目录的 `start.bat`。它会检查并尝试启动
+Windows 本机直接双击项目根目录的 `start-local.bat`。它会检查并尝试启动
 MySQL、PostgreSQL、Redis 和 RabbitMQ Windows 服务，执行数据库迁移与记忆表初始化，
 然后分别打开 FastAPI、RAG Worker 和 React 三个运行窗口。基础服务作为 Windows 服务运行，
 不需要额外保留四个终端；前后端就绪后会自动打开浏览器。只检查环境而不启动应用可执行：
 
 ```powershell
-.\start.bat --check
+.\start-local.bat -Check
 ```
 
-如果暂时不想自动打开浏览器，可以执行 `.\start.bat -NoBrowser`。
+如果暂时不想自动打开浏览器，可以执行 `.\start-local.bat -NoBrowser`。脚本优先使用已激活的
+虚拟环境，其次使用项目 `.venv`，最后尝试系统 `python.exe`。本机模式只读取 `.env`，不会读取或
+修改 Docker 配置。请保留原来能够正常运行的本机地址和密码：
+
+```env
+DB_URI=mysql+aiomysql://root:你的本机MySQL密码@127.0.0.1:3306/ainame?charset=utf8mb4
+LANGGRAPH_DB_URI=postgresql://postgres:你的本机PostgreSQL密码@127.0.0.1:5432/ai_name
+REDIS_URL=redis://127.0.0.1:6379/0
+RABBITMQ_URL=amqp://guest:guest@127.0.0.1:5672/
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+```
 
 如果 `.env` 没有设置 `RABBITMQ_URL`，脚本在本次本地启动中使用
 `amqp://guest:guest@127.0.0.1:5672/`；修改过 RabbitMQ 账号时必须在 `.env` 明确配置。
@@ -311,21 +319,17 @@ Ollama 仍运行在宿主机，不由 Compose 创建。`web` 和 `rag_worker` �
 
 ### 1. 准备 Docker 环境变量
 
-以现有 `.env` 为基础保留真实可用的 DeepSeek、JWT、邮件和支付宝配置，只修改 Docker 容器间连接地址。
-不要把 `.env` 提交到 Git。至少确认以下配置存在：
+Docker 只读取 `.env.docker`，不会读取本机 `.env`。先复制模板并填写 Docker 数据库密码及外部服务密钥：
+
+```powershell
+Copy-Item .env.docker.example .env.docker
+```
+
+不要把 `.env.docker` 提交到 Git。容器间地址由 Compose 显式设置，无需写进配置文件；至少确认：
 
 ```env
 MYSQL_ROOT_PASSWORD=replace_with_your_mysql_root_password
 POSTGRES_PASSWORD=replace_with_your_postgres_password
-
-DB_URI=mysql+aiomysql://root:${MYSQL_ROOT_PASSWORD}@db:3306/ainame?charset=utf8mb4
-LANGGRAPH_DB_URI=postgresql://postgres:${POSTGRES_PASSWORD}@postgres_db:5432/ai_name
-REDIS_URL=redis://redis:6379/0
-RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
-
-# Ollama 运行在 Docker 宿主机
-OLLAMA_BASE_URL=http://host.docker.internal:11434
-OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
 
 # 本机开发地址；正式上线后替换为 HTTPS 域名
 FRONTEND_BASE_URL=http://127.0.0.1:5173
@@ -341,8 +345,7 @@ ALIPAY_DEBUG=true
 
 ### 2. 构建并启动
 
-推荐直接运行根目录 `start.bat`。启动脚本检测到 `.env` 使用 `db`、`postgres_db` 和 `redis`
-等 Docker 服务名后，会自动完成以下步骤：
+推荐直接双击根目录 `start-docker.bat`，它会自动完成以下步骤：
 
 1. 启动 Docker Desktop（尚未运行时）。
 2. 构建并等待全部容器健康。
@@ -350,14 +353,17 @@ ALIPAY_DEBUG=true
 4. 初始化 PostgreSQL LangGraph Checkpoint 表。
 5. 检查宿主机 Ollama 和嵌入模型是否可用。
 
+仅做环境预检而不启动容器可执行 `.\start-docker.bat -Check`；不自动打开浏览器可增加
+`-NoBrowser`。原来的 `start.bat` 默认使用本机模式，不再根据环境变量猜测运行方式。
+
 也可以手动运行：
 
 ```powershell
-docker compose config -q
-docker compose up -d --build --wait --wait-timeout 300
-docker compose exec -T web alembic upgrade head
-docker compose exec -T web python init_pg_memory.py
-docker compose ps
+docker compose --env-file .env.docker config -q
+docker compose --env-file .env.docker up -d --build --wait --wait-timeout 300
+docker compose --env-file .env.docker exec -T web alembic upgrade head
+docker compose --env-file .env.docker exec -T web python init_pg_memory.py
+docker compose --env-file .env.docker ps
 ```
 
 `docker compose config -q` 应无输出并以状态码 0 结束。启动后可访问：

@@ -1,12 +1,31 @@
 param(
+    [ValidateSet('Local', 'Docker')]
+    [string]$Mode = 'Local',
     [switch]$Check,
     [switch]$NoBrowser
 )
 
 $ErrorActionPreference = 'Stop'
 $rootDir = Split-Path -Parent $PSScriptRoot
-$pythonExe = 'D:\python_all\all_envs\fastapi-env\python.exe'
-$alembicExe = 'D:\python_all\all_envs\fastapi-env\Scripts\alembic.exe'
+
+function Resolve-ProjectPython {
+    $candidates = @()
+    if ($env:VIRTUAL_ENV) {
+        $candidates += Join-Path $env:VIRTUAL_ENV 'Scripts\python.exe'
+    }
+    $candidates += Join-Path $rootDir '.venv\Scripts\python.exe'
+    $candidates += 'D:\python_all\all_envs\fastapi-env\python.exe'
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+            return $candidate
+        }
+    }
+    $pythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue
+    if ($pythonCommand) {
+        return $pythonCommand.Source
+    }
+    throw 'Python was not found. Create .venv or activate a Python 3.11+ virtual environment.'
+}
 
 function Test-LocalPort([int]$Port) {
     $client = New-Object Net.Sockets.TcpClient
@@ -96,12 +115,6 @@ function Wait-LocalPort([int]$Port, [string]$Label, [int]$Seconds = 30) {
     return $false
 }
 
-function Test-DockerEnvironment {
-    $envFile = Join-Path $rootDir '.env'
-    $dockerHostPattern = '(?m)^(DB_URI=.*@db:|LANGGRAPH_DB_URI=.*@postgres_db:|REDIS_URL=redis://redis:)'
-    return (Get-Content -Raw -LiteralPath $envFile) -match $dockerHostPattern
-}
-
 function Ensure-DockerEngine([int]$Seconds = 120) {
     $dockerCommand = Get-Command docker.exe -ErrorAction SilentlyContinue
     if (-not $dockerCommand) {
@@ -137,14 +150,18 @@ function Ensure-DockerEngine([int]$Seconds = 120) {
 }
 
 function Start-DockerEnvironment {
-    Write-Host '[MODE] Docker one-click startup (.env uses Docker service names).' -ForegroundColor Magenta
+    Write-Host '[MODE] Docker one-click startup.' -ForegroundColor Magenta
+    $dockerEnvFile = Join-Path $rootDir '.env.docker'
+    if (-not (Test-Path -LiteralPath $dockerEnvFile)) {
+        throw 'Docker environment file .env.docker is missing. Copy .env.docker.example and fill its secrets first.'
+    }
     $dockerCommand = Get-Command docker.exe -ErrorAction SilentlyContinue
     if (-not $dockerCommand) {
         throw 'docker.exe was not found. Install Docker Desktop and reopen this launcher.'
     }
 
     Invoke-Checked '[1/5] Validating Docker Compose configuration...' {
-        & $dockerCommand.Source compose config -q
+        & $dockerCommand.Source compose --env-file $dockerEnvFile config -q
     }
     if ($Check) {
         Write-Host '[5/5] Preflight passed. Containers were not started.' -ForegroundColor Green
@@ -153,20 +170,20 @@ function Start-DockerEnvironment {
 
     $dockerExe = Ensure-DockerEngine
     Invoke-Checked '[2/5] Building and starting all containers...' {
-        & $dockerExe compose up -d --build --wait --wait-timeout 300
+        & $dockerExe compose --env-file $dockerEnvFile up -d --build --wait --wait-timeout 300
     }
     Invoke-WithRetry '[3/5] Applying MySQL migrations...' {
-        & $dockerExe compose exec -T web alembic upgrade head
+        & $dockerExe compose --env-file $dockerEnvFile exec -T web alembic upgrade head
     }
     Invoke-WithRetry '[4/5] Initializing PostgreSQL checkpoint tables...' {
-        & $dockerExe compose exec -T web python init_pg_memory.py
+        & $dockerExe compose --env-file $dockerEnvFile exec -T web python init_pg_memory.py
     }
 
     Write-Host '[5/5] Waiting for the application...' -ForegroundColor Cyan
     $backendReady = Wait-LocalPort 8000 'Docker FastAPI' 60
     $frontendReady = Wait-LocalPort 5173 'Docker React frontend' 120
     if (-not $backendReady -or -not $frontendReady) {
-        & $dockerExe compose ps
+        & $dockerExe compose --env-file $dockerEnvFile ps
         throw 'One or more application containers did not become ready. Run docker compose logs to inspect them.'
     }
 
@@ -182,7 +199,7 @@ with urllib.request.urlopen(f"{base_url}/api/tags", timeout=5) as response:
 if model not in names:
     raise SystemExit(f"missing Ollama model: {model}")
 '@
-    & $dockerExe compose exec -T web python -c $ollamaProbe *> $null
+    & $dockerExe compose --env-file $dockerEnvFile exec -T web python -c $ollamaProbe *> $null
     if ($LASTEXITCODE -eq 0) {
         Write-Host '[OK] Ollama embedding service and model are available.' -ForegroundColor Green
     }
@@ -213,32 +230,39 @@ try {
     Write-Host '============================================================'
     Write-Host
 
-    if (-not (Test-Path -LiteralPath (Join-Path $rootDir '.env'))) { throw 'The project .env file is missing.' }
     if (-not (Test-Path -LiteralPath (Join-Path $rootDir 'frontend\package.json'))) { throw 'frontend\package.json is missing.' }
 
-    if (Test-DockerEnvironment) {
+    if ($Mode -eq 'Docker') {
         Start-DockerEnvironment
         exit 0
     }
 
     Write-Host '[MODE] Windows local-services startup.' -ForegroundColor Magenta
-    if (-not (Test-Path -LiteralPath $pythonExe)) { throw "Project Python was not found: $pythonExe" }
-    if (-not (Test-Path -LiteralPath $alembicExe)) { throw "Alembic was not found: $alembicExe" }
+    if (-not (Test-Path -LiteralPath (Join-Path $rootDir '.env'))) {
+        throw 'Local environment file .env is missing.'
+    }
+    $pythonExe = Resolve-ProjectPython
+    Write-Host "[OK] Python: $pythonExe" -ForegroundColor Green
 
     Ensure-LocalService 3306 'MySQL80' 'MySQL'
     Ensure-LocalService 5432 'postgresql-x64-18' 'PostgreSQL'
     Ensure-LocalService 6379 'Redis' 'Redis'
     Ensure-LocalService 5672 'RabbitMQ' 'RabbitMQ'
 
-    $rabbitConfigured = Select-String -LiteralPath (Join-Path $rootDir '.env') -Pattern '^RABBITMQ_URL=.+' -Quiet
-    if (-not $rabbitConfigured) {
-        $env:RABBITMQ_URL = 'amqp://guest:guest@127.0.0.1:5672/'
-        Write-Host '[INFO] RABBITMQ_URL is missing from .env. Using local guest/guest for this run.' -ForegroundColor Yellow
-        Write-Host '       Add RABBITMQ_URL to .env if your RabbitMQ credentials differ.' -ForegroundColor Yellow
+    try {
+        Invoke-Checked '[1/4] Applying MySQL migrations...' { & $pythonExe -m alembic upgrade head }
     }
-
-    Invoke-Checked '[1/4] Applying MySQL migrations...' { & $alembicExe upgrade head }
-    Invoke-Checked '[2/4] Initializing PostgreSQL checkpoint tables...' { & $pythonExe init_pg_memory.py }
+    catch {
+        Write-Host '[HINT] start-local.bat reads only .env. Restore DB_URI with the Windows MySQL password.' -ForegroundColor Yellow
+        throw
+    }
+    try {
+        Invoke-Checked '[2/4] Initializing PostgreSQL checkpoint tables...' { & $pythonExe init_pg_memory.py }
+    }
+    catch {
+        Write-Host '[HINT] Restore LANGGRAPH_DB_URI in .env with the Windows PostgreSQL password.' -ForegroundColor Yellow
+        throw
+    }
 
     $npmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
     if (-not $npmCommand) { throw 'npm.cmd was not found. Reopen the terminal or install Node.js 20.19+.' }

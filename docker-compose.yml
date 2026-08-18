@@ -3,8 +3,11 @@ services:
     build: .
     restart: always
     env_file:
-      - .env
+      - ${DOCKER_ENV_FILE:-.env.docker}
     environment:
+      DB_URI: mysql+aiomysql://root:${MYSQL_ROOT_PASSWORD}@db:3306/ainame?charset=utf8mb4
+      LANGGRAPH_DB_URI: postgresql://postgres:${POSTGRES_PASSWORD}@postgres_db:5432/ai_name
+      REDIS_URL: redis://redis:6379/0
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       OLLAMA_EMBEDDING_MODEL: nomic-embed-text:latest
@@ -107,8 +110,11 @@ services:
     restart: always
     command: [ "python", "rag_worker.py" ]
     env_file:
-      - .env
+      - ${DOCKER_ENV_FILE:-.env.docker}
     environment:
+      DB_URI: mysql+aiomysql://root:${MYSQL_ROOT_PASSWORD}@db:3306/ainame?charset=utf8mb4
+      LANGGRAPH_DB_URI: postgresql://postgres:${POSTGRES_PASSWORD}@postgres_db:5432/ai_name
+      REDIS_URL: redis://redis:6379/0
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       OLLAMA_EMBEDDING_MODEL: nomic-embed-text:latest
