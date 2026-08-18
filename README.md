@@ -292,16 +292,22 @@ VITE_API_BASE=http://192.168.31.211:8000
 
 若打包出现 `There is insufficient memory for the Java Runtime Environment` 或错误码 `1455`，请关闭占用内存的软件，并在 Windows“高级系统设置 → 性能 → 高级 → 虚拟内存”中启用系统管理大小，重启电脑后重新打包。正式上线时必须将局域网 HTTP 地址替换为可公网访问的 HTTPS API 域名。
 
-## Docker Compose 本地最小部署
+## Docker Compose 完整本地开发环境
 
 项目根目录已经提供 `Dockerfile`、`docker-compose.yml`、`nginx.conf` 和针对 Python 3.13 锁定的
-`requirements.txt`。当前 Compose 保持最小部署，只启动以下服务：
+`requirements.txt`。当前 Compose 启动以下服务：
 
 - `web`：FastAPI / Uvicorn 后端
 - `db`：MySQL 8.0 业务数据库
 - `postgres_db`：PostgreSQL 15，保存 LangGraph Checkpoint
 - `redis`：验证码、缓存和分布式锁
+- `rabbitmq`：知识库异步任务队列
+- `rag_worker`：PDF/TXT 解析、向量化及 Chroma 写入
+- `frontend`：React / Vite 开发服务器
 - `nginx`：将本机 80 端口反向代理到 `web:8000`
+
+Ollama 仍运行在宿主机，不由 Compose 创建。`web` 和 `rag_worker` 通过
+`http://host.docker.internal:11434` 访问它。
 
 ### 1. 准备 Docker 环境变量
 
@@ -315,6 +321,11 @@ POSTGRES_PASSWORD=replace_with_your_postgres_password
 DB_URI=mysql+aiomysql://root:${MYSQL_ROOT_PASSWORD}@db:3306/ainame?charset=utf8mb4
 LANGGRAPH_DB_URI=postgresql://postgres:${POSTGRES_PASSWORD}@postgres_db:5432/ai_name
 REDIS_URL=redis://redis:6379/0
+RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+
+# Ollama 运行在 Docker 宿主机
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
 
 # 本机开发地址；正式上线后替换为 HTTPS 域名
 FRONTEND_BASE_URL=http://127.0.0.1:5173
@@ -330,44 +341,63 @@ ALIPAY_DEBUG=true
 
 ### 2. 构建并启动
 
+推荐直接运行根目录 `start.bat`。启动脚本检测到 `.env` 使用 `db`、`postgres_db` 和 `redis`
+等 Docker 服务名后，会自动完成以下步骤：
+
+1. 启动 Docker Desktop（尚未运行时）。
+2. 构建并等待全部容器健康。
+3. 执行 MySQL Alembic 迁移。
+4. 初始化 PostgreSQL LangGraph Checkpoint 表。
+5. 检查宿主机 Ollama 和嵌入模型是否可用。
+
+也可以手动运行：
+
 ```powershell
 docker compose config -q
-docker compose up -d --build
+docker compose up -d --build --wait --wait-timeout 300
+docker compose exec -T web alembic upgrade head
+docker compose exec -T web python init_pg_memory.py
 docker compose ps
 ```
 
 `docker compose config -q` 应无输出并以状态码 0 结束。启动后可访问：
 
+- React 前端：`http://127.0.0.1:5173/`
 - Nginx / API：`http://127.0.0.1/`
 - Swagger UI：`http://127.0.0.1/docs`
-- 直接访问后端（仅容器端口映射存在时）：`http://127.0.0.1:8000/docs`
+- 直接访问后端：`http://127.0.0.1:8000/docs`
 
-当前 `web` 服务没有发布宿主机 8000 端口，因此以现有 Compose 配置为准，应通过 Nginx 的 80 端口访问。
+Vite 将浏览器发出的 `/api` 和 `/static` 请求代理到容器网络中的 `web:8000`。Nginx 的 80 端口
+当前只代理后端，不负责托管 React 生产构建。
 
-### 3. 初始化数据库
+### 3. Ollama 与知识库 RAG
 
-容器健康后执行 MySQL 迁移和 PostgreSQL Checkpoint 初始化：
+启动 Docker 前，先在 Windows 宿主机启动 Ollama 并安装嵌入模型：
 
 ```powershell
-docker compose exec web alembic upgrade head
-docker compose exec web python init_pg_memory.py
+ollama pull nomic-embed-text:latest
+ollama list
 ```
+
+如果 Ollama 没有运行或模型不存在，普通命名功能仍可使用，但私有知识库检索会跳过；上传任务会在
+`rag_worker` 中按重试策略处理。可通过 `docker compose logs -f rag_worker` 查看具体错误。
 
 ### 4. 查看日志与停止服务
 
 ```powershell
-docker compose logs -f web
+docker compose logs -f web frontend rag_worker rabbitmq
 docker compose down
 ```
 
 `docker compose down` 不会删除命名卷中的数据库数据。只有明确需要清空本地数据时才使用
 `docker compose down -v`。
 
-### 当前最小部署限制
+### 当前部署边界
 
-当前 Compose 有意不包含 RabbitMQ、`rag_worker` 和 Ollama，因此知识库上传后的异步解析、向量化与 RAG
-检索暂不可用；其他不依赖这些服务的后端功能仍可继续开发。React 前端也未打包进 Nginx，需继续通过
-`npm run dev` 在 `http://127.0.0.1:5173` 启动。
+Compose 已覆盖前端、后端、MySQL、PostgreSQL、Redis、RabbitMQ 和 RAG Worker，但不会模拟外部服务。
+DeepSeek、DashScope、SMTP、阿里云短信和支付宝仍需要真实可用的网络与凭据。支付宝服务器不能访问
+`127.0.0.1`，异步支付回调必须使用公网 HTTPS 地址。当前 `frontend` 是开发服务器；生产部署应构建
+静态文件并由 Nginx 或对象存储/CDN 托管。
 
 ## 手动完整初始化
 

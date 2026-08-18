@@ -201,7 +201,8 @@ async def company_naming_node(
         f"{state['other']} 品牌命名规范 行业词汇"
     )
 
-    rag_context = retrieve_user_knowledge(
+    rag_context = await asyncio.to_thread(
+        retrieve_user_knowledge,
         query=search_query,
         user_id=current_user_id,
     )
@@ -416,6 +417,10 @@ async def start_naming_memory() -> None:
 
     # 此处已经处于 Uvicorn 创建的事件循环中
     memory = AsyncPostgresSaver(connection_pool)
+    # setup() is idempotent and applies LangGraph's checkpoint schema
+    # migrations. Running it here prevents a healthy connection pool from
+    # masking a missing or newly-created PostgreSQL schema.
+    await memory.setup()
     naming_graph = workflow.compile(
         checkpointer=memory
     )
