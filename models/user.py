@@ -1,6 +1,6 @@
 from . import  Base
 from sqlalchemy.orm import mapped_column,Mapped
-from sqlalchemy import Column, Integer, String,DateTime
+from sqlalchemy import Integer, String, DateTime
 from pwdlib import PasswordHash
 from datetime import datetime
 
@@ -12,6 +12,13 @@ class User(Base):
     email:Mapped[str] = mapped_column(String(100),unique=True)
     username:Mapped[str] = mapped_column(String(100))
     _password:Mapped[str] = mapped_column(String(200))
+    avatar_url: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
+    token_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
+    )
     # 触发时机：当你通过类实例化创建一个新对象时
     # *args.能接收任意多个、不带名字的值,**kwargs 能接收任意多个、带名字的值
     def __init__(self, *args,**kwargs):

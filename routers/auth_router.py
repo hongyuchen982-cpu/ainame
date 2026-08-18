@@ -1,66 +1,132 @@
-import random
-import string
-from typing import Annotated
-from fastapi import APIRouter, Depends, Query, HTTPException
-from pydantic import EmailStr
+import secrets
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi_mail import FastMail, MessageSchema, MessageType
+from pydantic import EmailStr
 from redis.asyncio import Redis
-# 如果你用的是 fastapi-mail，建议用 aiosmtplib 的异常
-from aiosmtplib.errors import SMTPException, SMTPResponseException
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.authtools import AuthHandler
 from core.redistools import get_redis
-# 下面这几个路径按你项目实际位置改
-from dependencies import get_email
+from dependencies import get_email, get_session
+from repository.credit_repo import CreditRepository
+from repository.security_repo import SecurityRepository
+from repository.user_repo import UserRepository
 from schemas import ResponseOut
+from schemas.user_schemas import (
+    AccessTokenOut,
+    LoginIn,
+    LoginOut,
+    PasswordResetCodeIn,
+    PasswordResetConfirmIn,
+    RegisterIn,
+    TokenVerifyOut,
+    UserCreateSchema,
+)
+
+router = APIRouter(prefix="/auth", tags=["认证"])
+auth_handler = AuthHandler()
+SEND_LIMIT = 3
+SEND_WINDOW_SECONDS = 600
+VERIFY_LIMIT = 5
+VERIFY_WINDOW_SECONDS = 600
+LOGIN_LIMIT = 8
+LOGIN_WINDOW_SECONDS = 900
+
+RATE_LIMIT_SCRIPT = """
+local current = redis.call('INCR', KEYS[1])
+if current == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+return current
+"""
+
+CONSUME_CODE_SCRIPT = """
+local saved = redis.call('GET', KEYS[1])
+if not saved then return -1 end
+if saved ~= ARGV[1] then return 0 end
+redis.call('DEL', KEYS[1])
+return 1
+"""
 
 
-router = APIRouter(prefix="/auth")
+def client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
 
-@router.get("/code", response_model=ResponseOut)
-async def get_email_code(email: Annotated[EmailStr, Query(...)],
-mail: FastMail = Depends(get_email),
-redis: Redis = Depends(get_redis)):
-# 1.生成4位数验证码
-    source = string.digits * 4
-    code = ''.join(random.sample(source, 4))
 
- # 2.创建消息对象
+async def increment_rate_limit(
+    redis: Redis,
+    key: str,
+    *,
+    limit: int,
+    window_seconds: int,
+) -> int:
+    current = int(await redis.eval(RATE_LIMIT_SCRIPT, 1, key, window_seconds))
+    if current > limit:
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+    return current
+
+
+async def ensure_not_rate_limited(redis: Redis, key: str, limit: int) -> None:
+    if int(await redis.get(key) or 0) >= limit:
+        raise HTTPException(status_code=429, detail="尝试次数过多，请稍后再试")
+
+
+async def consume_email_code(redis: Redis, key: str, code: str) -> bool:
+    return int(await redis.eval(CONSUME_CODE_SCRIPT, 1, key, code)) == 1
+
+
+async def send_email_code(
+    *,
+    mail: FastMail,
+    redis: Redis,
+    key: str,
+    email: str,
+    code: str,
+    subject: str,
+) -> None:
+    await redis.set(key, code, ex=300)
     message = MessageSchema(
-        subject="【ai起名字app】注册验证码",
+        subject=subject,
         recipients=[email],
-        body=f"您的验证码为：{code}，五分钟有效！",
-        # subtype = 邮件正文是什么格式
-        # MessageType.plain = 纯文本格式
-        subtype=MessageType.plain
+        body=f"您的验证码为：{code}，5 分钟内有效。请勿向他人泄露。",
+        subtype=MessageType.plain,
     )
     try:
-        await redis.set(f"register:code:{email}", code, ex=300)
         await mail.send_message(message)
-        return {"result": "success", "message": "验证码已发送至您的邮箱"}
-    except (SMTPResponseException, SMTPException) as e:
-        # 捕获SMTP具体错误并记录
-        error_str = str(e)
-        if "-1" in error_str and r"\x00" in error_str:
-            print("⚠️ 忽略 QQ 邮箱 SMTP 关闭阶段的非标准响应（邮件已成功发送）")
-            # 将邮箱和验证码存储到数据库中
-            await redis.set(f"register:code:{email}", code, ex=300)
-            return ResponseOut()
-        else:
-            # 捕获所有其他错误
-            raise HTTPException(status_code=500, detail="邮件发送失败！")
-        
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio.session import AsyncSession
-from redis.asyncio import Redis
+    except Exception as exc:
+        await redis.delete(key)
+        raise HTTPException(status_code=500, detail="邮件发送失败") from exc
 
-from schemas.user_schemas import UserCreateSchema, RegisterIn
-from repository.user_repo import UserRepository
-from repository.credit_repo import CreditRepository
-from dependencies import get_session
-from core.redistools import get_redis
 
-# 假设 router 和 ResponseOut 已经在文件顶部定义或导入
-# @router = APIRouter(...)
-# from schemas.common_schemas import ResponseOut
+@router.get("/code", response_model=ResponseOut)
+async def get_email_code(
+    request: Request,
+    email: EmailStr = Query(...),
+    mail: FastMail = Depends(get_email),
+    redis: Redis = Depends(get_redis),
+):
+    normalized_email = str(email).lower()
+    ip_address = client_ip(request)
+    await increment_rate_limit(
+        redis, f"rate:register-code:email:{normalized_email}",
+        limit=SEND_LIMIT, window_seconds=SEND_WINDOW_SECONDS,
+    )
+    await increment_rate_limit(
+        redis, f"rate:register-code:ip:{ip_address}",
+        limit=SEND_LIMIT, window_seconds=SEND_WINDOW_SECONDS,
+    )
+    code = f"{secrets.randbelow(1000000):06d}"
+    await send_email_code(
+        mail=mail,
+        redis=redis,
+        key=f"register:code:{normalized_email}",
+        email=normalized_email,
+        code=code,
+        subject="【一念 AI】注册验证码",
+    )
+    return {"result": "success", "message": "验证码已发送至您的邮箱"}
+
 
 @router.post("/register", response_model=ResponseOut)
 async def register(
@@ -68,97 +134,226 @@ async def register(
     session: AsyncSession = Depends(get_session),
     redis: Redis = Depends(get_redis),
 ):
-    user_repo = UserRepository(session=session)
-    credit_repo = CreditRepository(session=session)
-    
-    # 1. 判断邮箱是否存在
-    email_exist = await user_repo.email_is_exist(email=str(data.email))
-    if email_exist:
-        raise HTTPException(400, detail="该邮箱已经存在！")
-        
-    # 2. 校验验证码是否正确
-    redis_key = f"register:code:{data.email}"
-    saved_code = await redis.get(redis_key)
-    if not saved_code:
-        raise HTTPException(400, detail="验证码已过期或未发送！")
-    
-    # 注意：如果使用的 redis 客户端默认返回 bytes，这里可能需要 decode("utf-8")
-    if saved_code != str(data.code):
-        raise HTTPException(400, detail="验证码错误！")
-        
-    try:
-        # 3. 创建用户
-        user = await user_repo.create(
-            UserCreateSchema(
-                email=str(data.email),
-                password=data.password,
-                username=data.username,
-            )
+    email = str(data.email).lower()
+    user_repo = UserRepository(session)
+    if await user_repo.email_is_exist(email):
+        raise HTTPException(status_code=400, detail="该邮箱已经存在")
+
+    attempt_key = f"rate:register-verify:{email}"
+    await ensure_not_rate_limited(redis, attempt_key, VERIFY_LIMIT)
+    redis_key = f"register:code:{email}"
+    if not await consume_email_code(redis, redis_key, data.code):
+        await increment_rate_limit(
+            redis, attempt_key, limit=VERIFY_LIMIT,
+            window_seconds=VERIFY_WINDOW_SECONDS,
         )
-        
-        # 4. 注册成功后，赠送 3 次起名机会
-        await credit_repo.create_register_credit(user_id=user.id, gift_count=3)
-        
-        # 5. 注册成功后删除验证码，防止重复使用
-        await redis.delete(redis_key)
-        
-    except Exception as e:
-        raise HTTPException(500, detail=str(e))
-        
-    return ResponseOut()
+        raise HTTPException(status_code=400, detail="验证码错误")
 
-from core.authtools import AuthHandler
-from schemas.user_schemas import LoginIn
-from models.user import User
-from schemas.user_schemas import LoginOut
+    try:
+        async with session.begin():
+            user = await user_repo.create_in_transaction(UserCreateSchema(
+                email=email,
+                username=data.username,
+                password=data.password,
+            ))
+            await CreditRepository(session).create_register_credit_in_transaction(
+                user.id, gift_count=3
+            )
+            await SecurityRepository(session).assign_default_role_in_transaction(user.id)
+            from repository.growth_repo import GrowthRepository
+            await GrowthRepository(session).bind_registration_in_transaction(
+                user.id, data.invite_code
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        raise HTTPException(status_code=400, detail="该邮箱已经存在") from exc
+    await redis.delete(attempt_key)
+    return {"result": "success", "message": "注册成功"}
 
-auth_handler = AuthHandler()
 
-@router.post(path='/login', response_model=LoginOut)
+@router.post("/login", response_model=LoginOut)
 async def login(
     data: LoginIn,
+    request: Request,
     session: AsyncSession = Depends(get_session),
+    redis: Redis = Depends(get_redis),
 ):
-    # 1. 创建user_repo对象
-    user_repo = UserRepository(session=session)
-    # 2. 根据邮箱查找用户
-    user: User | None = await user_repo.get_by_email(str(data.email))
-    if not user:
-        raise HTTPException(status_code=400, detail="该用户不存在！")
-    if not user.check_password(data.password):
-        raise HTTPException(status_code=400, detail="邮箱或密码错误！")
-    # 3. 生成JWT Token
-    tokens = auth_handler.encode_login_token(user.id)
+    email = str(data.email).lower()
+    ip_address = client_ip(request)
+    email_rate_key = f"rate:login:email:{email}"
+    ip_rate_key = f"rate:login:ip:{ip_address}"
+    await ensure_not_rate_limited(redis, email_rate_key, LOGIN_LIMIT)
+    await ensure_not_rate_limited(redis, ip_rate_key, LOGIN_LIMIT)
+    user_agent = request.headers.get("user-agent", "")
+    user_repo = UserRepository(session)
+    security_repo = SecurityRepository(session)
+    user = await user_repo.get_by_email(email)
+
+    if user is None or not user.check_password(data.password):
+        await security_repo.record_login(
+            email=email,
+            user_id=user.id if user else None,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=False,
+            failure_reason="邮箱或密码错误",
+        )
+        await increment_rate_limit(
+            redis, email_rate_key, limit=LOGIN_LIMIT,
+            window_seconds=LOGIN_WINDOW_SECONDS,
+        )
+        await increment_rate_limit(
+            redis, ip_rate_key, limit=LOGIN_LIMIT,
+            window_seconds=LOGIN_WINDOW_SECONDS,
+        )
+        raise HTTPException(status_code=400, detail="邮箱或密码错误")
+    if user.status != "active":
+        await security_repo.record_login(
+            email=email,
+            user_id=user.id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=False,
+            failure_reason="账号已被冻结",
+        )
+        raise HTTPException(status_code=403, detail="账号已被冻结，请联系管理员")
+
+    await redis.delete(email_rate_key, ip_rate_key)
+
+    refresh_jti = str(uuid4())
+    device = await security_repo.create_device(
+        user_id=user.id,
+        user_agent=user_agent,
+        ip_address=ip_address,
+        refresh_jti=refresh_jti,
+    )
+    tokens = auth_handler.encode_login_token(
+        user_id=user.id,
+        token_version=user.token_version,
+        device_id=device.id,
+        refresh_jti=refresh_jti,
+    )
+    await security_repo.record_login(
+        email=email,
+        user_id=user.id,
+        device_id=device.id,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        success=True,
+    )
+    roles = await security_repo.get_role_codes(user.id)
+    permissions = sorted(await security_repo.get_permission_codes(user.id))
     return {
-        "user": user,
-        "access_token": tokens["access_token"],
-        "refresh_token": tokens["refresh_token"],
-	}
-
-
-from schemas.user_schemas import AccessTokenOut, TokenVerifyOut
-
-@router.get(
-    path="/verify-access",
-    response_model=TokenVerifyOut,
-)
-async def verify_access_token(
-    user_id: int = Depends(
-        auth_handler.auth_access_dependency
-    ),
-):
-    return {
-        "message": "Access Token验证成功",
-        "user_id": user_id,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "avatar_url": user.avatar_url,
+            "status": user.status,
+            "roles": roles,
+            "permissions": permissions,
+        },
+        **tokens,
     }
 
-@router.post(
-    path="/refresh",
-    response_model=AccessTokenOut,
-)
-async def refresh_access_token(
-    user_id: int = Depends(
-        auth_handler.auth_refresh_dependency
-    ),
+
+@router.get("/verify-access", response_model=TokenVerifyOut)
+async def verify_access_token(
+    user_id: int = Depends(auth_handler.auth_access_dependency),
 ):
-    return auth_handler.encode_update_token(user_id)
+    return {"message": "Access Token 验证成功", "user_id": user_id}
+
+
+@router.post("/refresh", response_model=AccessTokenOut)
+async def refresh_access_token(
+    payload: dict = Depends(auth_handler.auth_refresh_dependency),
+    session: AsyncSession = Depends(get_session),
+):
+    user = await UserRepository(session).get_by_id(payload["user_id"])
+    refresh_jti = str(uuid4())
+    device = await SecurityRepository(session).rotate_refresh_token(
+        payload.get("device_id", ""),
+        payload["user_id"],
+        payload.get("jti", ""),
+        refresh_jti,
+    )
+    if user is None or device is None:
+        raise HTTPException(status_code=401, detail="登录设备已失效")
+    return auth_handler.encode_login_token(
+        user_id=user.id,
+        token_version=user.token_version,
+        device_id=device.id,
+        refresh_jti=refresh_jti,
+    )
+
+
+@router.post("/logout", response_model=ResponseOut)
+async def logout(
+    payload: dict = Depends(auth_handler.auth_access_payload_dependency),
+    session: AsyncSession = Depends(get_session),
+):
+    await SecurityRepository(session).revoke_device(
+        payload.get("device_id", ""),
+        payload["user_id"],
+    )
+    return {"result": "success", "message": "已安全退出"}
+
+
+@router.post("/password-reset/code", response_model=ResponseOut)
+async def password_reset_code(
+    data: PasswordResetCodeIn,
+    request: Request,
+    mail: FastMail = Depends(get_email),
+    redis: Redis = Depends(get_redis),
+    session: AsyncSession = Depends(get_session),
+):
+    email = str(data.email).lower()
+    ip_address = client_ip(request)
+    await increment_rate_limit(
+        redis, f"rate:reset-code:email:{email}",
+        limit=SEND_LIMIT, window_seconds=SEND_WINDOW_SECONDS,
+    )
+    await increment_rate_limit(
+        redis, f"rate:reset-code:ip:{ip_address}",
+        limit=SEND_LIMIT, window_seconds=SEND_WINDOW_SECONDS,
+    )
+    user = await UserRepository(session).get_by_email(email)
+    if user:
+        code = f"{secrets.randbelow(1000000):06d}"
+        await send_email_code(
+            mail=mail,
+            redis=redis,
+            key=f"password-reset:code:{email}",
+            email=email,
+            code=code,
+            subject="【一念 AI】密码重置验证码",
+        )
+    return {"result": "success", "message": "如果该邮箱已注册，验证码将发送至邮箱"}
+
+
+@router.post("/password-reset/confirm", response_model=ResponseOut)
+async def password_reset_confirm(
+    data: PasswordResetConfirmIn,
+    redis: Redis = Depends(get_redis),
+    session: AsyncSession = Depends(get_session),
+):
+    email = str(data.email).lower()
+    attempt_key = f"rate:password-reset-verify:{email}"
+    await ensure_not_rate_limited(redis, attempt_key, VERIFY_LIMIT)
+    redis_key = f"password-reset:code:{email}"
+    if not await consume_email_code(redis, redis_key, data.code):
+        await increment_rate_limit(
+            redis, attempt_key, limit=VERIFY_LIMIT,
+            window_seconds=VERIFY_WINDOW_SECONDS,
+        )
+        raise HTTPException(status_code=400, detail="验证码错误或已过期")
+
+    user_repo = UserRepository(session)
+    user = await user_repo.get_by_email(email)
+    if user is None:
+        raise HTTPException(status_code=400, detail="验证码错误或已过期")
+    await user_repo.change_password(user.id, data.new_password)
+    await SecurityRepository(session).revoke_all_devices(user.id)
+    await redis.delete(attempt_key)
+    return {"result": "success", "message": "密码已重置，请重新登录"}

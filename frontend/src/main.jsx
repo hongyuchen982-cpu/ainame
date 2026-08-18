@@ -2,6 +2,15 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles.css'
+import './knowledge.css'
+import './brand-assets.css'
+import './reports.css'
+import './account-dashboard.css'
+import './operations.css'
+import './experts.css'
+import './community.css'
+import './developers.css'
+import './growth.css'
 
 class AppErrorBoundary extends React.Component {
   constructor(props) {

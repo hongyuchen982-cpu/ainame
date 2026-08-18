@@ -6,7 +6,7 @@ DB_URI = os.getenv("DB_URI")
 engine = create_async_engine(
     DB_URI,
 # 将输出所有执行SQL的日志（默认是关闭的）
-    echo=True,
+    echo=os.getenv("SQL_ECHO", "false").lower() == "true",
 # 连接池大小（默认是5个）
     pool_size=10,
 # 允许连接池最大的连接数（默认是10个）
@@ -46,6 +46,19 @@ from . import user
 
 from . import user
 from . import user_credit
+from . import payment_transaction
 
 from . import package
 from . import user_order
+from . import selected_name
+from . import auth_models
+from . import naming_project
+from . import knowledge_file
+from . import async_task
+from . import name_validation
+from . import brand_asset
+from . import naming_report
+from . import expert_service
+from . import community
+from . import developer_platform
+from . import growth

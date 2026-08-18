@@ -51,10 +51,10 @@ async def generate_names(name_info: NameIn) -> NameResultSchema:
             if result is not None:
                 return result
 
-            print(f"⚠️ 第 {attempt + 1} 次模型未按规范输出，正在重试...")
+            print(f"[WARN] 第 {attempt + 1} 次模型未按规范输出，正在重试...")
 
         except Exception as e:
-            print(f"❌ 第 {attempt + 1} 次请求遭遇网络异常: {e}，正在重试...")
+            print(f"[ERROR] 第 {attempt + 1} 次请求遭遇网络异常: {e}，正在重试...")
 
     raise ValueError("大模型服务器当前较拥挤或未正确响应，生成失败，请稍后重新点击生成。")
 
