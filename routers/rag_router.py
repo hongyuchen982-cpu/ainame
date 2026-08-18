@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.authtools import AuthHandler
 from core.rag_service import delete_knowledge_file_vectors
+from core.upload_validation import resolve_upload_path, validate_upload_metadata
 from dependencies import get_session
 from repository.knowledge_repo import KnowledgeRepository
 from repository.security_repo import SecurityRepository
@@ -28,7 +29,6 @@ router = APIRouter(prefix="/knowledge", tags=["知识库"])
 admin_router = APIRouter(prefix="/admin/knowledge/files", tags=["运营后台·知识库"])
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-ALLOWED_EXTENSIONS = {".pdf", ".txt"}
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 load_dotenv()
 RABBITMQ_URL = os.getenv("RABBITMQ_URL")
@@ -65,10 +65,7 @@ def task_for(item, background_task) -> dict:
 
 
 def safe_storage_path(raw_path: str) -> Path:
-    path = Path(raw_path).resolve()
-    if UPLOAD_DIR.resolve() not in path.parents:
-        raise RuntimeError("知识库文件路径不安全")
-    return path
+    return resolve_upload_path(raw_path, UPLOAD_DIR)
 
 
 async def enqueue_or_fail(item, background_task, session: AsyncSession) -> None:
@@ -88,10 +85,12 @@ async def upload_file(
     user_id: int = Depends(auth_handler.auth_access_dependency),
     session: AsyncSession = Depends(get_session),
 ):
-    original_name = Path(file.filename or "").name
-    extension = Path(original_name).suffix.lower()
-    if extension not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="仅支持 PDF、TXT 文件")
+    try:
+        original_name, extension, content_type = validate_upload_metadata(
+            file.filename, file.content_type
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     content = await file.read(MAX_UPLOAD_SIZE + 1)
     if not content:
         raise HTTPException(status_code=400, detail="上传文件不能为空")
@@ -99,6 +98,11 @@ async def upload_file(
         raise HTTPException(status_code=400, detail="文件不能超过 10MB")
     if extension == ".pdf" and not content.startswith(b"%PDF-"):
         raise HTTPException(status_code=400, detail="PDF 文件内容格式错误")
+    if extension == ".txt":
+        try:
+            content.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=400, detail="TXT 文件必须使用 UTF-8 编码") from exc
 
     file_path = (UPLOAD_DIR / f"{user_id}_{uuid4().hex}{extension}").resolve()
     if UPLOAD_DIR.resolve() not in file_path.parents:
@@ -111,7 +115,7 @@ async def upload_file(
                 original_name=original_name,
                 storage_path=str(file_path),
                 extension=extension,
-                mime_type=file.content_type or "",
+                mime_type=content_type,
                 size_bytes=len(content),
                 checksum=hashlib.sha256(content).hexdigest(),
             )

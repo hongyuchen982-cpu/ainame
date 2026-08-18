@@ -23,4 +23,4 @@ if __name__ == "__main__":
 # ⚠ 专治 Windows 下的异步兼容性报错
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-        asyncio.run(setup_memory_db())
+    asyncio.run(setup_memory_db())

@@ -7,9 +7,11 @@ class NameSchema(BaseModel):
     name: Annotated[str, Field(..., description="姓名")]
     reference: Annotated[str, Field(..., description="出处")]
     moral: Annotated[str, Field(..., description="寓意")]
-    domain: str = Field(..., description="为该品牌设计的纯小写 .com 域名，例如: astar.com")
-# 👇 新增：默认状态，稍后由我们的工具自动填入
-    domain_status: str = Field(default="正在查询...", description="域名的注册状态")
+    domain: str = Field(
+        default="",
+        description="企业名可用的纯小写 .com 域名；人名和宠物名无需提供",
+    )
+    domain_status: str = Field(default="", description="域名的注册状态，仅企业名使用")
 class NameResultSchema(BaseModel):
     names: List[NameSchema]
 
